@@ -1,0 +1,42 @@
+.DS_Store
+._*
+
+# Build outputs
+dist/
+*.ipk
+*.tar.gz
+*.img
+*.img.gz
+*.qcow2
+
+# OpenWrt build system artifacts
+bin/
+build_dir/
+dl/
+feeds/
+key-build*
+logs/
+staging_dir/
+tmp/
+.config
+.config.old
+
+# Python test/runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor and local environment files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.tmp
+*.log
+
+# Local VM/container transfer artifacts
+*.b64
+wv3.ipk
+utm_smoke.out

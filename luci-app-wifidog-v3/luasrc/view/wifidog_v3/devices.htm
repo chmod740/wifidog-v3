@@ -1,0 +1,321 @@
+<%
+local style = [[
+<style>
+.wifidog-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.wifidog-table th { background: #f5f5f5; padding: 10px 8px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600; }
+.wifidog-table td { padding: 8px; border-bottom: 1px solid #eee; vertical-align: middle; }
+.wifidog-table tr:hover { background: #fafafa; }
+.wifidog-btn { padding: 4px 12px; margin: 0 2px; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+.wifidog-btn-success { background: #4CAF50; color: white; border-color: #4CAF50; }
+.wifidog-btn-warning { background: #ff9800; color: white; border-color: #ff9800; }
+.wifidog-btn-info { background: #2196F3; color: white; border-color: #2196F3; }
+.wifidog-btn-danger { background: #f44336; color: white; border-color: #f44336; }
+.wifidog-btn-secondary { background: #607d8b; color: white; border-color: #607d8b; }
+.wifidog-note { width: 160px; max-width: 100%; padding: 5px 7px; border: 1px solid #ccc; border-radius: 3px; }
+.wifidog-note-dirty { border-color: #ff9800; background: #fff8e1; }
+.wifidog-empty { text-align: center; padding: 28px; color: #999; }
+.wifidog-loading { text-align: center; padding: 28px; color: #666; }
+.wifidog-msg { padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }
+.wifidog-msg-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.wifidog-msg-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.wifidog-section-title { margin-top: 22px; }
+</style>
+]]
+
+local function csrf_token()
+	local ok, dispatcher = pcall(require, "luci.dispatcher")
+	local ctx = ok and dispatcher and dispatcher.context or nil
+	if not ctx and luci and luci.dispatcher then
+		ctx = luci.dispatcher.context
+	end
+	return (ctx and (ctx.requesttoken or ctx.token)) or ""
+end
+
+local csrf_token = csrf_token()
+local script = [[
+<script>
+var token = ']] .. csrf_token .. [[';
+var scanUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/scan_devices") .. [[';
+var authorizedUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/list_authorized") .. [[';
+var addWhitelistUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/add_whitelist") .. [[';
+var addBlacklistUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/add_blacklist") .. [[';
+var addAuthorizeUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/add_authorize") .. [[';
+var removeUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/remove_device") .. [[';
+var noteUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/update_note") .. [[';
+var refreshTimer = null;
+
+function withToken(url) {
+	if (!token) return url;
+	return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(token);
+}
+
+function body(params) {
+	params.token = token;
+	return new URLSearchParams(params).toString();
+}
+
+function showMessage(msg, type) {
+	var el = document.getElementById('wifidog-msg');
+	el.textContent = msg;
+	el.className = 'wifidog-msg wifidog-msg-' + type;
+	el.style.display = 'block';
+	setTimeout(function() { el.style.display = 'none'; }, 3000);
+}
+
+function esc(s) {
+	return String(s || '').replace(/[&<>"']/g, function(c) {
+		return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+	});
+}
+
+function addTextCell(row, text) {
+	var td = document.createElement('td');
+	td.textContent = text || '';
+	row.appendChild(td);
+	return td;
+}
+
+function addNoteCell(row, id, value, placeholder) {
+	var td = document.createElement('td');
+	var input = document.createElement('input');
+	input.className = 'wifidog-note';
+	input.id = id;
+	input.value = value || '';
+	input.dataset.original = value || '';
+	if (placeholder) input.placeholder = placeholder;
+	input.addEventListener('input', function() {
+		input.classList.toggle('wifidog-note-dirty', input.value !== input.dataset.original);
+	});
+	td.appendChild(input);
+	row.appendChild(td);
+	return td;
+}
+
+function addButton(cell, className, label, handler) {
+	var btn = document.createElement('button');
+	btn.type = 'button';
+	btn.className = 'wifidog-btn ' + className;
+	btn.textContent = label;
+	btn.addEventListener('click', handler);
+	cell.appendChild(btn);
+}
+
+function post(url, params, okText, refresh) {
+	fetch(withToken(url), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body(params) })
+	.then(function(r) { return r.json(); })
+	.then(function(data) {
+		if (data.success) {
+			showMessage(data.message || okText, 'success');
+			if (refresh) refresh();
+		} else {
+			showMessage(data.message || '操作失败', 'error');
+		}
+	})
+	.catch(function(err) { showMessage('操作失败: ' + err, 'error'); });
+}
+
+function refreshAll() {
+	loadPending();
+	loadAuthorized();
+}
+
+function makeNoteId(prefix, dev, idx) {
+	return prefix + '-' + String(dev.mac || idx).replace(/[^A-Za-z0-9]/g, '');
+}
+
+function isEditingNote() {
+	var active = document.activeElement;
+	return !!(active && active.classList && active.classList.contains('wifidog-note'));
+}
+
+function hasUnsavedNote() {
+	return !!document.querySelector('.wifidog-note-dirty');
+}
+
+function autoRefresh() {
+	if (isEditingNote() || hasUnsavedNote()) return;
+	refreshAll();
+}
+
+function markNoteSaved(noteId) {
+	var input = document.getElementById(noteId);
+	if (!input) return;
+	input.dataset.original = input.value;
+	input.classList.remove('wifidog-note-dirty');
+}
+
+function loadPending() {
+	var tbody = document.getElementById('pending-tbody');
+	var loading = document.getElementById('pending-loading');
+	var empty = document.getElementById('pending-empty');
+	tbody.innerHTML = '';
+	fetch(withToken(scanUrl), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body({}) })
+	.then(function(r) { return r.json(); })
+	.then(function(data) {
+		loading.style.display = 'none';
+		var devices = Array.isArray(data.devices) ? data.devices : [];
+		if (!data.success || devices.length === 0) {
+			empty.style.display = 'block';
+			return;
+		}
+		empty.style.display = 'none';
+		devices.forEach(function(dev, idx) {
+			var noteId = makeNoteId('pending-note', dev, idx);
+			var tr = document.createElement('tr');
+			addTextCell(tr, dev.ip);
+			addTextCell(tr, dev.mac);
+			addTextCell(tr, dev.hostname || '-');
+			addNoteCell(tr, noteId, dev.note || '', '备注');
+			var actions = document.createElement('td');
+			addButton(actions, 'wifidog-btn-secondary', '保存备注', function() {
+				saveNote(dev.mac, noteId, dev.ip, dev.hostname || '');
+			});
+			addButton(actions, 'wifidog-btn-success', '添加白名单', function() {
+				addWhitelist(dev.mac, dev.ip, dev.hostname || '', noteId);
+			});
+			addButton(actions, 'wifidog-btn-warning', '添加黑名单', function() {
+				addBlacklist(dev.mac, dev.ip, dev.hostname || '', noteId);
+			});
+			addButton(actions, 'wifidog-btn-info', '手动授权', function() {
+				addAuthorize(dev.mac, dev.ip, dev.hostname || '', noteId);
+			});
+			tr.appendChild(actions);
+			tbody.appendChild(tr);
+		});
+	})
+	.catch(function(err) {
+		loading.style.display = 'none';
+		showMessage('加载待授权设备失败: ' + err, 'error');
+	});
+}
+
+function loadAuthorized() {
+	var tbody = document.getElementById('authorized-tbody');
+	var loading = document.getElementById('authorized-loading');
+	var empty = document.getElementById('authorized-empty');
+	tbody.innerHTML = '';
+	fetch(withToken(authorizedUrl), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body({}) })
+	.then(function(r) { return r.json(); })
+	.then(function(data) {
+		loading.style.display = 'none';
+		var devices = Array.isArray(data.devices) ? data.devices : [];
+		if (!data.success || devices.length === 0) {
+			empty.style.display = 'block';
+			return;
+		}
+		empty.style.display = 'none';
+		devices.forEach(function(dev, idx) {
+			var noteId = makeNoteId('auth-note', dev, idx);
+			var authCode = dev.auth_code ? '（' + dev.auth_code + '）' : '';
+			var tr = document.createElement('tr');
+			addTextCell(tr, dev.ip);
+			addTextCell(tr, dev.mac);
+			addTextCell(tr, dev.hostname || '-');
+			addTextCell(tr, (dev.auth_source_text || '-') + authCode);
+			addTextCell(tr, dev.remaining_text || '-');
+			addNoteCell(tr, noteId, dev.note || '');
+			var actions = document.createElement('td');
+			addButton(actions, 'wifidog-btn-secondary', '保存备注', function() {
+				saveNote(dev.mac, noteId);
+			});
+			addButton(actions, 'wifidog-btn-success', '添加白名单', function() {
+				addWhitelist(dev.mac, dev.ip, dev.hostname || '', noteId);
+			});
+			addButton(actions, 'wifidog-btn-warning', '添加黑名单', function() {
+				addBlacklist(dev.mac, dev.ip, dev.hostname || '', noteId);
+			});
+			addButton(actions, 'wifidog-btn-danger', '删除', function() {
+				removeDevice(dev.mac);
+			});
+			tr.appendChild(actions);
+			tbody.appendChild(tr);
+		});
+	})
+	.catch(function(err) {
+		loading.style.display = 'none';
+		showMessage('加载已授权设备失败: ' + err, 'error');
+	});
+}
+
+function noteValue(id) {
+	var el = document.getElementById(id);
+	return el ? el.value : '';
+}
+
+function addWhitelist(mac, ip, hostname, noteId) {
+	if (!confirm('确定将 ' + mac + ' 添加到白名单吗？')) return;
+	post(addWhitelistUrl, { mac: mac, ip: ip, hostname: hostname, note: noteValue(noteId) }, '已添加到白名单', refreshAll);
+}
+
+function addBlacklist(mac, ip, hostname, noteId) {
+	if (!confirm('确定将 ' + mac + ' 添加到黑名单吗？')) return;
+	post(addBlacklistUrl, { mac: mac, ip: ip, hostname: hostname, note: noteValue(noteId) }, '已添加到黑名单', refreshAll);
+}
+
+function addAuthorize(mac, ip, hostname, noteId) {
+	if (!confirm('确定手动授权设备 ' + mac + ' 上网权限吗？')) return;
+	post(addAuthorizeUrl, { mac: mac, ip: ip, hostname: hostname, note: noteValue(noteId) }, '授权成功', refreshAll);
+}
+
+function saveNote(mac, noteId, ip, hostname) {
+	post(noteUrl, { mac: mac, ip: ip || '', hostname: hostname || '', note: noteValue(noteId) }, '备注已保存', function() {
+		markNoteSaved(noteId);
+	});
+}
+
+function removeDevice(mac) {
+	if (!confirm('确定删除设备 ' + mac + ' 的授权记录吗？')) return;
+	post(removeUrl, { mac: mac }, '已删除', refreshAll);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+	refreshAll();
+	refreshTimer = setInterval(autoRefresh, 15000);
+});
+</script>
+]]
+%>
+
+<% write(style) %>
+
+<div id="wifidog-msg" class="wifidog-msg" style="display:none;"></div>
+
+<div class="cbi-section">
+	<h3><%:待授权设备列表%></h3>
+	<p><em><%:以下为当前内网中未受管理的设备，可以先填写备注，再添加白名单、黑名单或手动授权。%></em></p>
+	<table class="wifidog-table cbi-section-table">
+		<thead>
+			<tr>
+				<th width="13%"><%:IP地址%></th>
+				<th width="18%"><%:MAC地址%></th>
+				<th width="16%"><%:主机名%></th>
+				<th width="17%"><%:备注%></th>
+				<th width="36%"><%:操作%></th>
+			</tr>
+		</thead>
+		<tbody id="pending-tbody"></tbody>
+	</table>
+	<div id="pending-loading" class="wifidog-loading"><%:正在加载待授权设备...%></div>
+	<div id="pending-empty" class="wifidog-empty" style="display:none;"><%:当前没有待授权的设备%></div>
+
+	<h3 class="wifidog-section-title"><%:已授权设备列表%></h3>
+	<p><em><%:这里显示授权码自助授权和管理页面手动授权的设备，以及授权剩余有效时间。%></em></p>
+	<table class="wifidog-table cbi-section-table">
+		<thead>
+			<tr>
+				<th width="11%"><%:IP地址%></th>
+				<th width="16%"><%:MAC地址%></th>
+				<th width="12%"><%:主机名%></th>
+				<th width="16%"><%:授权方式%></th>
+				<th width="11%"><%:剩余时间%></th>
+				<th width="14%"><%:备注%></th>
+				<th width="20%"><%:操作%></th>
+			</tr>
+		</thead>
+		<tbody id="authorized-tbody"></tbody>
+	</table>
+	<div id="authorized-loading" class="wifidog-loading"><%:正在加载已授权设备...%></div>
+	<div id="authorized-empty" class="wifidog-empty" style="display:none;"><%:当前没有已授权的设备%></div>
+</div>
+
+<% write(script) %>

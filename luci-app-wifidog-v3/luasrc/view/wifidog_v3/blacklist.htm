@@ -1,0 +1,180 @@
+<%
+local style = [[
+<style>
+.wifidog-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.wifidog-table th { background: #f5f5f5; padding: 10px 8px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600; }
+.wifidog-table td { padding: 8px; border-bottom: 1px solid #eee; vertical-align: middle; }
+.wifidog-table tr:hover { background: #fafafa; }
+.wifidog-btn { padding: 4px 12px; margin: 0 2px; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+.wifidog-btn-danger { background: #f44336; color: white; border-color: #f44336; }
+.wifidog-btn-danger:hover { background: #da190b; }
+.wifidog-empty { text-align: center; padding: 40px; color: #999; }
+.wifidog-loading { text-align: center; padding: 40px; color: #666; }
+.wifidog-msg { padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }
+.wifidog-msg-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.wifidog-msg-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.wifidog-note { width: 160px; max-width: 100%; padding: 5px 7px; border: 1px solid #ccc; border-radius: 3px; }
+.wifidog-btn-secondary { background: #607d8b; color: white; border-color: #607d8b; }
+</style>
+]]
+
+
+local function csrf_token()
+	local ok, dispatcher = pcall(require, "luci.dispatcher")
+	local ctx = ok and dispatcher and dispatcher.context or nil
+	if not ctx and luci and luci.dispatcher then
+		ctx = luci.dispatcher.context
+	end
+	return (ctx and (ctx.requesttoken or ctx.token)) or ""
+end
+
+local csrf_token = csrf_token()
+local script = [[
+<script>
+var token = ']] .. csrf_token .. [[';
+var listUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/list_blacklist") .. [[';
+var removeUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/remove_device") .. [[';
+var noteUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/update_note") .. [[';
+
+function withToken(url) {
+	if (!token) return url;
+	return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(token);
+}
+
+function showMessage(msg, type) {
+	var el = document.getElementById('wifidog-msg');
+	el.textContent = msg;
+	el.className = 'wifidog-msg wifidog-msg-' + type;
+	el.style.display = 'block';
+	setTimeout(function() { el.style.display = 'none'; }, 3000);
+}
+
+function esc(s) {
+	return String(s || '').replace(/[&<>"']/g, function(c) {
+		return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+	});
+}
+
+function loadDevices() {
+	var tbody = document.getElementById('devices-tbody');
+	var loading = document.getElementById('devices-loading');
+	var empty = document.getElementById('devices-empty');
+
+	tbody.innerHTML = '';
+
+	fetch(withToken(listUrl), {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: 'token=' + encodeURIComponent(token)
+	})
+	.then(function(r) { return r.json(); })
+	.then(function(data) {
+		loading.style.display = 'none';
+		var devices = Array.isArray(data.devices) ? data.devices : [];
+		if (!data.success || devices.length === 0) {
+			empty.style.display = 'block';
+			return;
+		}
+		empty.style.display = 'none';
+
+		devices.forEach(function(dev) {
+			var created = dev.created && dev.created != '0'
+				? new Date(parseInt(dev.created) * 1000).toLocaleString('zh-CN')
+				: '-';
+			var noteId = 'black-note-' + dev.mac.replace(/[^A-Za-z0-9]/g, '');
+
+			var tr = document.createElement('tr');
+			tr.innerHTML =
+				'<td>' + esc(dev.ip) + '</td>' +
+				'<td>' + esc(dev.mac) + '</td>' +
+				'<td>' + esc(dev.hostname || '-') + '</td>' +
+				'<td><input class="wifidog-note" id="' + noteId + '" value="' + esc(dev.note || '') + '"></td>' +
+				'<td>' + created + '</td>' +
+				'<td>' +
+					'<button type="button" class="wifidog-btn wifidog-btn-secondary" onclick="saveNote(\'' + dev.mac + '\',\'' + noteId + '\')">保存备注</button>' +
+					'<button type="button" class="wifidog-btn wifidog-btn-danger" onclick="removeDevice(\'' + dev.mac + '\')">删除</button>' +
+				'</td>';
+			tbody.appendChild(tr);
+		});
+	})
+	.catch(function(err) {
+		loading.style.display = 'none';
+		showMessage('加载黑名单失败: ' + err, 'error');
+	});
+}
+
+function saveNote(mac, noteId) {
+	var note = document.getElementById(noteId).value;
+	fetch(withToken(noteUrl), {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: 'token=' + encodeURIComponent(token) + '&mac=' + encodeURIComponent(mac) + '&note=' + encodeURIComponent(note)
+	})
+	.then(function(r) { return r.json(); })
+	.then(function(data) {
+		showMessage(data.message || (data.success ? '备注已保存' : '操作失败'), data.success ? 'success' : 'error');
+	})
+	.catch(function(err) {
+		showMessage('操作失败: ' + err, 'error');
+	});
+}
+
+function removeDevice(mac) {
+	if (!confirm('确定将 ' + mac + ' 从黑名单中删除吗？删除后该设备将回到待授权状态。')) return;
+
+	fetch(withToken(removeUrl), {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: 'token=' + encodeURIComponent(token) + '&mac=' + encodeURIComponent(mac)
+	})
+	.then(function(r) { return r.json(); })
+	.then(function(data) {
+		if (data.success) {
+			showMessage('已从黑名单删除', 'success');
+			loadDevices();
+		} else {
+			showMessage(data.message || '操作失败', 'error');
+		}
+	})
+	.catch(function(err) {
+		showMessage('操作失败: ' + err, 'error');
+	});
+}
+
+document.addEventListener('DOMContentLoaded', loadDevices);
+</script>
+]]
+%>
+
+<% write(style) %>
+
+<div id="wifidog-msg" class="wifidog-msg" style="display:none;"></div>
+
+<div class="cbi-section">
+	<h3><%:黑名单设备列表%></h3>
+	<p><em><%:黑名单中的设备只能访问内网资源，访问公网 HTTP 时只会看到已拉黑提示，不能自助授权。%></em></p>
+
+	<table class="wifidog-table cbi-section-table">
+		<thead>
+			<tr>
+				<th width="15%"><%:IP地址%></th>
+				<th width="20%"><%:MAC地址%></th>
+				<th width="16%"><%:主机名%></th>
+				<th width="18%"><%:备注%></th>
+				<th width="18%"><%:添加时间%></th>
+				<th width="28%"><%:操作%></th>
+			</tr>
+		</thead>
+		<tbody id="devices-tbody">
+		</tbody>
+	</table>
+
+	<div id="devices-loading" class="wifidog-loading">
+		<%:正在加载黑名单...%>
+	</div>
+	<div id="devices-empty" class="wifidog-empty" style="display:none;">
+		<%:黑名单中没有设备%>
+	</div>
+</div>
+
+<% write(script) %>

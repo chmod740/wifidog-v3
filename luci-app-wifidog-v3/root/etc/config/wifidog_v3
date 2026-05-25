@@ -1,0 +1,33 @@
+config wifidog_v3 'settings'
+	option enabled '0'
+	option wan_interface ''
+	option lan_interface ''
+	option portal_port '8080'
+	option lan_subnet ''
+	option auth_timeout '1440'
+	option auto_detect_wan '1'
+	option portal_theme 'classic'
+	option portal_title '网络认证'
+	option portal_prompt '请输入授权码以访问互联网'
+	option portal_hint '如需获取授权码，请联系网络管理员。认证成功后会自动确认网络状态并尝试关闭认证窗口。'
+	option portal_button_text '认证上网'
+	option portal_code_label '授权码'
+	option portal_code_placeholder '请输入授权码'
+
+# Device entries use MAC address as section name (with colons replaced by underscores for UCI compat)
+# config device 'aa_bb_cc_dd_ee_ff'
+#	option mac 'aa:bb:cc:dd:ee:ff'
+#	option ip '192.168.1.100'
+#	option hostname 'device-name'
+#	option type 'whitelist'  # whitelist / blacklist / authorized
+#	option auth_expiry '0'   # unix timestamp for authorized devices
+#	option created '0'       # unix timestamp when added
+
+# Auth code entries
+# config authcode 'CODE123'
+#	option code 'CODE123'
+#	option max_uses '1'
+#	option used_count '0'
+#	option expiry_days '30'
+#	option created_date '2024-01-01'
+#	option enabled '1'

@@ -1,0 +1,203 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8"
+
+msgid "WiFiDog V3 认证系统"
+msgstr "WiFiDog V3 认证系统"
+
+msgid "WiFiDog V3 系统设置"
+msgstr "WiFiDog V3 系统设置"
+
+msgid "网络设备扫描"
+msgstr "网络设备扫描"
+
+msgid "白名单管理"
+msgstr "白名单管理"
+
+msgid "黑名单管理"
+msgstr "黑名单管理"
+
+msgid "授权码管理"
+msgstr "授权码管理"
+
+msgid "系统设置"
+msgstr "系统设置"
+
+msgid "基本设置"
+msgstr "基本设置"
+
+msgid "启用系统"
+msgstr "启用系统"
+
+msgid "开启或关闭 WiFiDog V3 认证系统"
+msgstr "开启或关闭 WiFiDog V3 认证系统"
+
+msgid "认证设置"
+msgstr "认证设置"
+
+msgid "系统状态"
+msgstr "系统状态"
+
+msgid "WAN接口自动检测"
+msgstr "WAN接口自动检测"
+
+msgid "系统将自动检测WAN接口，也可在下方手动指定"
+msgstr "系统将自动检测WAN接口，也可在下方手动指定"
+
+msgid "WAN接口"
+msgstr "WAN接口"
+
+msgid "手动指定WAN接口名称，留空则自动检测。常见值：eth0, eth1, wan"
+msgstr "手动指定WAN接口名称，留空则自动检测。常见值：eth0, eth1, wan"
+
+msgid "自动检测"
+msgstr "自动检测"
+
+msgid "LAN接口"
+msgstr "LAN接口"
+
+msgid "内网接口名称，默认 lan"
+msgstr "内网接口名称，默认 lan"
+
+msgid "Portal端口"
+msgstr "Portal端口"
+
+msgid "认证页面服务端口，默认 8080"
+msgstr "认证页面服务端口，默认 8080"
+
+msgid "内网子网"
+msgstr "内网子网"
+
+msgid "内网子网地址，用于设备扫描时过滤，默认为 192.168.1.0/24"
+msgstr "内网子网地址，用于设备扫描时过滤，默认为 192.168.1.0/24"
+
+msgid "授权时长（分钟）"
+msgstr "授权时长（分钟）"
+
+msgid "设备授权后的有效时长，默认1440分钟（24小时）"
+msgstr "设备授权后的有效时长，默认1440分钟（24小时）"
+
+msgid "自动检测WAN接口"
+msgstr "自动检测WAN接口"
+
+msgid "启用后系统将自动检测WAN接口变化并在设置页面上可选"
+msgstr "启用后系统将自动检测WAN接口变化并在设置页面上可选"
+
+msgid "服务状态"
+msgstr "服务状态"
+
+msgid "系统状态："
+msgstr "系统状态："
+
+msgid "已启用"
+msgstr "已启用"
+
+msgid "防火墙规则："
+msgstr "防火墙规则："
+
+msgid "运行中"
+msgstr "运行中"
+
+msgid "未运行"
+msgstr "未运行"
+
+msgid "已禁用"
+msgstr "已禁用"
+
+msgid "请在基本设置中启用系统"
+msgstr "请在基本设置中启用系统"
+
+msgid "无法获取状态信息"
+msgstr "无法获取状态信息"
+
+msgid "正在获取状态信息..."
+msgstr "正在获取状态信息..."
+
+msgid "待授权设备列表"
+msgstr "待授权设备列表"
+
+msgid "以下为当前内网中未受管理的设备，请根据需要添加白名单、黑名单或进行授权。"
+msgstr "以下为当前内网中未受管理的设备，请根据需要添加白名单、黑名单或进行授权。"
+
+msgid "IP地址"
+msgstr "IP地址"
+
+msgid "MAC地址"
+msgstr "MAC地址"
+
+msgid "主机名"
+msgstr "主机名"
+
+msgid "操作"
+msgstr "操作"
+
+msgid "正在加载设备列表..."
+msgstr "正在加载设备列表..."
+
+msgid "当前没有待授权的设备"
+msgstr "当前没有待授权的设备"
+
+msgid "白名单设备列表"
+msgstr "白名单设备列表"
+
+msgid "白名单中的设备可以不受限制地访问内外网资源。"
+msgstr "白名单中的设备可以不受限制地访问内外网资源。"
+
+msgid "添加时间"
+msgstr "添加时间"
+
+msgid "正在加载白名单..."
+msgstr "正在加载白名单..."
+
+msgid "白名单中没有设备"
+msgstr "白名单中没有设备"
+
+msgid "黑名单设备列表"
+msgstr "黑名单设备列表"
+
+msgid "黑名单中的设备只能访问内网资源，无法访问任何公网资源，且不会跳转到认证页面。"
+msgstr "黑名单中的设备只能访问内网资源，无法访问任何公网资源，且不会跳转到认证页面。"
+
+msgid "正在加载黑名单..."
+msgstr "正在加载黑名单..."
+
+msgid "黑名单中没有设备"
+msgstr "黑名单中没有设备"
+
+msgid "生成新的授权码"
+msgstr "生成新的授权码"
+
+msgid "授权码："
+msgstr "授权码："
+
+msgid "可用次数："
+msgstr "可用次数："
+
+msgid "有效期（天）："
+msgstr "有效期（天）："
+
+msgid "生成授权码"
+msgstr "生成授权码"
+
+msgid "已生成的授权码"
+msgstr "已生成的授权码"
+
+msgid "授权码"
+msgstr "授权码"
+
+msgid "已用/总计"
+msgstr "已用/总计"
+
+msgid "有效期"
+msgstr "有效期"
+
+msgid "创建日期"
+msgstr "创建日期"
+
+msgid "状态"
+msgstr "状态"
+
+msgid "正在加载授权码列表..."
+msgstr "正在加载授权码列表..."
+
+msgid "暂未生成任何授权码"
+msgstr "暂未生成任何授权码"

@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /www/wifidog_v3/cgi-bin/wifidog_v3/portal

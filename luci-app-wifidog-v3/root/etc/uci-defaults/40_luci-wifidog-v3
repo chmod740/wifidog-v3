@@ -1,0 +1,70 @@
+#!/bin/sh
+
+# Initialize UCI config if not exists
+if [ ! -f /etc/config/wifidog_v3 ]; then
+	cat > /etc/config/wifidog_v3 << 'CFGEOF'
+config wifidog_v3 'settings'
+	option enabled '0'
+	option wan_interface ''
+	option lan_interface ''
+	option portal_port '8080'
+	option lan_subnet ''
+	option auth_timeout '1440'
+	option auto_detect_wan '1'
+	option portal_theme 'classic'
+	option portal_title '网络认证'
+	option portal_prompt '请输入授权码以访问互联网'
+	option portal_hint '如需获取授权码，请联系网络管理员。认证成功后会自动确认网络状态并尝试关闭认证窗口。'
+	option portal_button_text '认证上网'
+	option portal_code_label '授权码'
+	option portal_code_placeholder '请输入授权码'
+CFGEOF
+fi
+
+ensure_setting() {
+	key="$1"
+	value="$2"
+	if ! uci -q get "wifidog_v3.settings.$key" >/dev/null 2>&1; then
+		uci -q set "wifidog_v3.settings.$key=$value"
+	fi
+}
+
+ensure_setting portal_theme classic
+ensure_setting portal_title '网络认证'
+ensure_setting portal_prompt '请输入授权码以访问互联网'
+ensure_setting portal_hint '如需获取授权码，请联系网络管理员。认证成功后会自动确认网络状态并尝试关闭认证窗口。'
+ensure_setting portal_button_text '认证上网'
+ensure_setting portal_code_label '授权码'
+ensure_setting portal_code_placeholder '请输入授权码'
+uci -q commit wifidog_v3
+
+# Set up ucitrack so UCI changes trigger init reload
+if ! uci -q get ucitrack.@wifidog_v3[0] >/dev/null 2>&1; then
+	uci -q batch <<-UCIEOF >/dev/null
+		add ucitrack wifidog_v3
+		set ucitrack.@wifidog_v3[-1].init=wifidog_v3
+		commit ucitrack
+UCIEOF
+fi
+
+# Remove legacy portal uhttpd instance if upgrading from an older build.
+if uci -q get uhttpd.wifidog_v3 >/dev/null 2>&1; then
+	uci -q delete uhttpd.wifidog_v3
+	uci -q commit uhttpd
+	/etc/init.d/uhttpd restart 2>/dev/null || true
+fi
+
+portal_port="$(uci -q get wifidog_v3.settings.portal_port 2>/dev/null)"
+[ -n "$portal_port" ] || portal_port="8080"
+for pid in $(ps w 2>/dev/null | awk -v port="$portal_port" '
+	/uhttpd/ && /\/www\/wifidog_v3/ {
+		if ($0 ~ ("-p[[:space:]]+([^[:space:]]+:)?" port "([[:space:]]|$)")) print $1
+	}
+'); do
+	kill "$pid" >/dev/null 2>&1 || true
+done
+
+chmod 755 /www/wifidog_v3/cgi-bin/wifidog_v3/portal 2>/dev/null
+chmod 755 /www/cgi-bin/wifidog_v3/portal 2>/dev/null
+
+exit 0

@@ -1,0 +1,869 @@
+#!/usr/bin/env lua
+
+local function trim(s)
+	return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function shell_quote(s)
+	s = tostring(s or "")
+	return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+local function run(cmd)
+	os.execute(cmd .. " >/dev/null 2>&1")
+end
+
+local function read_cmd(cmd)
+	local fp = io.popen(cmd .. " 2>/dev/null")
+	if not fp then
+		return ""
+	end
+	local data = fp:read("*a") or ""
+	fp:close()
+	return trim(data)
+end
+
+local function uci_get(path, default)
+	local value = read_cmd("uci -q get " .. shell_quote(path))
+	if value == "" then
+		return default or ""
+	end
+	return value
+end
+
+local function uci_set(expr)
+	run("uci -q set " .. shell_quote(expr))
+end
+
+local function uci_delete(path)
+	run("uci -q delete " .. shell_quote(path))
+end
+
+local function uci_commit()
+	run("uci -q commit wifidog_v3")
+end
+
+local function get_router_ip()
+	return uci_get("network.lan.ipaddr", "192.168.1.1")
+end
+
+local function get_portal_port()
+	return uci_get("wifidog_v3.settings.portal_port", "8080")
+end
+
+local function portal_base_url()
+	local router_ip = get_router_ip()
+	local portal_port = get_portal_port()
+	if portal_port == "" or portal_port == "80" then
+		return "http://" .. router_ip
+	end
+	return "http://" .. router_ip .. ":" .. portal_port
+end
+
+local function reload_firewall()
+	run("/etc/init.d/wifidog_v3 reload")
+end
+
+local function urldecode(s)
+	s = tostring(s or "")
+	s = s:gsub("+", " ")
+	s = s:gsub("%%(%x%x)", function(hex)
+		return string.char(tonumber(hex, 16))
+	end)
+	return s
+end
+
+local function parse_form(body)
+	local form = {}
+	for pair in tostring(body or ""):gmatch("[^&]+") do
+		local key, value = pair:match("^([^=]*)=?(.*)$")
+		if key and key ~= "" then
+			form[urldecode(key)] = urldecode(value or "")
+		end
+	end
+	return form
+end
+
+local function json_escape(s)
+	s = tostring(s or "")
+	s = s:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\r", "\\r"):gsub("\n", "\\n")
+	return s
+end
+
+local function html_escape(s)
+	s = tostring(s or "")
+	s = s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"):gsub("'", "&#39;")
+	return s
+end
+
+local function html_escape_multiline(s)
+	return html_escape(s):gsub("\r\n", "\n"):gsub("\r", "\n"):gsub("\n", "<br>")
+end
+
+local function clean_text(s, max_len)
+	s = tostring(s or "")
+	s = s:gsub("[%z\001-\008\011\012\014-\031\127]", " ")
+	if max_len and #s > max_len then
+		s = s:sub(1, max_len)
+	end
+	return s
+end
+
+local function setting_text(key, default, max_len)
+	local value = uci_get("wifidog_v3.settings." .. key, "")
+	if value == "" then
+		value = default or ""
+	end
+	return clean_text(value, max_len)
+end
+
+local function portal_theme_css(theme)
+	if theme == "dark" then
+		return [[
+		body { background: #111827; color: #e5e7eb; }
+		.container { background: #1f2937; box-shadow: 0 18px 54px rgba(0,0,0,.42); border: 1px solid rgba(148,163,184,.2); }
+		h1 { color: #f9fafb; }
+		.subtitle { color: #cbd5e1; }
+		label { color: #e5e7eb; }
+		input[type="text"] { border-color: #475569; background: #111827; color: #f9fafb; }
+		input[type="text"]::placeholder { color: #94a3b8; }
+		input[type="text"]:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, .2); }
+		button { background: #38bdf8; color: #082f49; }
+		.info { background: rgba(56, 189, 248, .12); color: #cbd5e1; }
+		]]
+	elseif theme == "emerald" then
+		return [[
+		body { background: #ecfdf5; color: #052e2b; }
+		.container { background: #ffffff; box-shadow: 0 16px 46px rgba(6, 78, 59, .16); border: 1px solid #bbf7d0; }
+		h1 { color: #064e3b; }
+		.subtitle { color: #047857; }
+		label { color: #065f46; }
+		input[type="text"] { border-color: #86efac; background: #ffffff; }
+		input[type="text"]:focus { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, .16); }
+		button { background: #059669; color: #ffffff; }
+		.info { background: #d1fae5; color: #065f46; }
+		]]
+	elseif theme == "warm" then
+		return [[
+		body { background: #fff7ed; color: #431407; }
+		.container { background: #ffffff; box-shadow: 0 16px 46px rgba(154, 52, 18, .16); border: 1px solid #fed7aa; }
+		h1 { color: #7c2d12; }
+		.subtitle { color: #9a3412; }
+		label { color: #7c2d12; }
+		input[type="text"] { border-color: #fdba74; background: #fffaf5; }
+		input[type="text"]:focus { border-color: #f97316; box-shadow: 0 0 0 3px rgba(249, 115, 22, .16); }
+		button { background: #ea580c; color: #ffffff; }
+		.info { background: #ffedd5; color: #7c2d12; }
+		]]
+	end
+
+	return [[
+		body { background: #eef2f7; color: #111827; }
+		.container { background: white; box-shadow: 0 16px 48px rgba(15, 23, 42, 0.16); }
+		h1 { color: #111827; }
+		.subtitle { color: #6b7280; }
+		label { color: #374151; }
+		input[type="text"] { border-color: #cbd5e1; background: #fff; }
+		input[type="text"]:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .14); }
+		button { background: #2563eb; color: white; }
+		.info { background: #eff6ff; color: #4b5563; }
+	]]
+end
+
+local function mac_to_section(mac)
+	return tostring(mac or ""):lower():gsub(":", "_")
+end
+
+local IP_SESSION_FILE = "/tmp/wifidog_v3_ip_sessions"
+local IP_SESSION_TTL = 600
+
+local function valid_ipv4(ip)
+	local a, b, c, d = tostring(ip or ""):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+	if not a then
+		return false
+	end
+	a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+	return a and b and c and d and a <= 255 and b <= 255 and c <= 255 and d <= 255
+end
+
+local function get_client_ip()
+	return os.getenv("REMOTE_ADDR") or ""
+end
+
+local function get_client_mac(client_ip)
+	if not client_ip or client_ip == "" then
+		return ""
+	end
+
+	local arp = io.open("/proc/net/arp", "r")
+	if arp then
+		arp:read("*l")
+		for line in arp:lines() do
+			local ip, _, _, mac = line:match("^(%S+)%s+(%S+)%s+(%S+)%s+(%S+)")
+			if ip == client_ip and mac and mac ~= "00:00:00:00:00:00" then
+				arp:close()
+				return mac:upper()
+			end
+		end
+		arp:close()
+	end
+
+	local leases = io.open("/tmp/dhcp.leases", "r")
+	if leases then
+		for line in leases:lines() do
+			local _, mac, ip = line:match("^(%d+)%s+(%S+)%s+(%S+)")
+			if ip == client_ip and mac then
+				leases:close()
+				return mac:upper()
+			end
+		end
+		leases:close()
+	end
+
+	return ""
+end
+
+local function iter_uci_sections()
+	local out = read_cmd("uci -q show wifidog_v3")
+	local sections = {}
+
+	for line in out:gmatch("[^\n]+") do
+		local section, opt, value = line:match("^wifidog_v3%.([^%.=]+)%.([^=]+)='?(.-)'?$")
+		if section and opt then
+			value = value:gsub("'$", "")
+			sections[section] = sections[section] or {}
+			sections[section][opt] = value
+		else
+			local type_section, stype = line:match("^wifidog_v3%.([^=]+)='?(.-)'?$")
+			if type_section and stype then
+				stype = stype:gsub("'$", "")
+				sections[type_section] = sections[type_section] or {}
+				sections[type_section][".type"] = stype
+			end
+		end
+	end
+
+	return sections
+end
+
+local function get_device_by_mac(mac)
+	local target = tostring(mac or ""):upper()
+	if target == "" then
+		return nil
+	end
+
+	for name, section in pairs(iter_uci_sections()) do
+		if section[".type"] == "device" and section.mac and tostring(section.mac):upper() == target then
+			section[".name"] = name
+			return section
+		end
+	end
+
+	return nil
+end
+
+local function load_ip_sessions()
+	local sessions = {}
+	local now = os.time()
+	local changed = false
+	local fp = io.open(IP_SESSION_FILE, "r")
+	if not fp then
+		return sessions, false
+	end
+
+	for line in fp:lines() do
+		local expires, ip, mac = line:match("^(%d+)%s+(%S+)%s+(%S+)")
+		expires = tonumber(expires or "0") or 0
+		if expires > now and valid_ipv4(ip) and mac and mac ~= "" then
+			sessions[ip] = { expires = expires, mac = mac:upper() }
+		else
+			changed = true
+		end
+	end
+	fp:close()
+	return sessions, changed
+end
+
+local function save_ip_sessions(sessions)
+	local fp = io.open(IP_SESSION_FILE, "w")
+	if not fp then
+		return
+	end
+
+	for ip, item in pairs(sessions or {}) do
+		if valid_ipv4(ip) and item and item.mac and tonumber(item.expires or "0") then
+			fp:write(tostring(item.expires), " ", ip, " ", tostring(item.mac):upper(), "\n")
+		end
+	end
+	fp:close()
+end
+
+local function remember_ip_session(ip, mac, auth_expiry)
+	if not valid_ipv4(ip) or not mac or mac == "" then
+		return
+	end
+
+	local now = os.time()
+	local expires = now + IP_SESSION_TTL
+	local device_expiry = tonumber(auth_expiry or "0") or 0
+	if device_expiry > now and device_expiry < expires then
+		expires = device_expiry
+	end
+	if expires <= now then
+		return
+	end
+
+	local sessions = load_ip_sessions()
+	sessions[ip] = { expires = expires, mac = tostring(mac):upper() }
+	save_ip_sessions(sessions)
+end
+
+local function forget_ip_session(ip)
+	if not valid_ipv4(ip) then
+		return
+	end
+
+	local sessions = load_ip_sessions()
+	if sessions[ip] then
+		sessions[ip] = nil
+		save_ip_sessions(sessions)
+	end
+end
+
+local function validate_auth_code(code)
+	code = tostring(code or ""):upper()
+	if code == "" then
+		return false, "请输入授权码"
+	end
+
+	local found_name, found
+	for name, section in pairs(iter_uci_sections()) do
+		if section[".type"] == "authcode" and tostring(section.code or ""):upper() == code then
+			found_name = name
+			found = section
+			break
+		end
+	end
+
+	if not found then
+		return false, "授权码无效"
+	end
+	if found.enabled ~= "1" then
+		return false, "授权码已被禁用"
+	end
+
+	local max_uses = tonumber(found.max_uses or "1") or 1
+	local used_count = tonumber(found.used_count or "0") or 0
+	if used_count >= max_uses then
+		return false, "授权码使用次数已用完"
+	end
+
+	local created_date = found.created_date or ""
+	local expiry_days = tonumber(found.expiry_days or "30") or 30
+	local year, month, day = created_date:match("^(%d+)-(%d+)-(%d+)$")
+	if year and month and day then
+		local created = os.time({ year = tonumber(year), month = tonumber(month), day = tonumber(day), hour = 0 })
+		if created and os.time() > created + expiry_days * 86400 then
+			return false, "授权码已过期"
+		end
+	end
+
+	uci_set("wifidog_v3." .. found_name .. ".used_count=" .. tostring(used_count + 1))
+	uci_commit()
+	return true, "认证成功", code
+end
+
+local function delete_devices_by_mac(mac)
+	local target = tostring(mac or ""):upper()
+	for name, section in pairs(iter_uci_sections()) do
+		if section[".type"] == "device" and section.mac and tostring(section.mac):upper() == target then
+			uci_delete("wifidog_v3." .. name)
+		end
+	end
+end
+
+local function authorize_client(mac, ip, source, auth_code)
+	if not mac or mac == "" then
+		return false
+	end
+
+	local timeout = tonumber(uci_get("wifidog_v3.settings.auth_timeout", "1440")) or 1440
+	local now = os.time()
+	local expiry = now + timeout * 60
+	local section = mac_to_section(mac)
+
+	delete_devices_by_mac(mac)
+	uci_set("wifidog_v3." .. section .. "=device")
+	uci_set("wifidog_v3." .. section .. ".mac=" .. mac:upper())
+	uci_set("wifidog_v3." .. section .. ".ip=" .. tostring(ip or ""))
+	uci_set("wifidog_v3." .. section .. ".type=authorized")
+	uci_set("wifidog_v3." .. section .. ".auth_expiry=" .. tostring(expiry))
+	uci_set("wifidog_v3." .. section .. ".auth_source=" .. tostring(source or "code"))
+	uci_set("wifidog_v3." .. section .. ".auth_code=" .. tostring(auth_code or ""))
+	uci_set("wifidog_v3." .. section .. ".created=" .. tostring(now))
+	uci_commit()
+	remember_ip_session(ip, mac, expiry)
+	reload_firewall()
+	return true
+end
+
+local function read_body()
+	local length = tonumber(os.getenv("CONTENT_LENGTH") or "0") or 0
+	if length <= 0 then
+		return io.read("*a") or ""
+	end
+	return io.read(length) or ""
+end
+
+local function request_target()
+	local uri = os.getenv("REQUEST_URI") or "/"
+	local path, query = uri:match("^([^?]*)%??(.*)$")
+	return path or "/", query or "", uri
+end
+
+local function response(status, content_type, body, extra_headers)
+	body = body or ""
+	io.write("Status: " .. status .. "\r\n")
+	io.write("Content-Type: " .. content_type .. "\r\n")
+	io.write("Content-Length: " .. tostring(#body) .. "\r\n")
+	io.write("Cache-Control: no-store, no-cache, must-revalidate\r\n")
+	for key, value in pairs(extra_headers or {}) do
+		io.write(key .. ": " .. value .. "\r\n")
+	end
+	io.write("\r\n")
+	io.write(body)
+end
+
+local function json_response(body)
+	response("200 OK", "application/json; charset=utf-8", body)
+end
+
+local function captive_json_response(body)
+	response("200 OK", "application/captive+json", body)
+end
+
+local function is_auth_valid(auth_expiry)
+	local expiry = tonumber(auth_expiry or "0") or 0
+	return expiry > os.time()
+end
+
+local function is_unrestricted_device(device)
+	if not device then
+		return false
+	end
+	if device.type == "whitelist" then
+		return true
+	end
+	return device.type == "authorized" and is_auth_valid(device.auth_expiry)
+end
+
+local function get_device_by_ip_session(ip)
+	local sessions, changed = load_ip_sessions()
+	local item = sessions[ip or ""]
+	if changed then
+		save_ip_sessions(sessions)
+	end
+	if not item or not item.mac then
+		return nil
+	end
+
+	local device = get_device_by_mac(item.mac)
+	if is_unrestricted_device(device) then
+		return device
+	end
+
+	forget_ip_session(ip)
+	return device
+end
+
+local function resolve_client_device(ip, mac)
+	local device
+	if mac and mac ~= "" then
+		device = get_device_by_mac(mac)
+		if device then
+			if is_unrestricted_device(device) then
+				remember_ip_session(ip, device.mac or mac, device.auth_expiry)
+			else
+				forget_ip_session(ip)
+			end
+			return device
+		end
+	end
+
+	local session_device = get_device_by_ip_session(ip)
+	if mac and mac ~= "" and session_device and session_device.mac and tostring(session_device.mac):upper() ~= tostring(mac):upper() then
+		forget_ip_session(ip)
+		return nil
+	end
+	return session_device
+end
+
+local function auth_seconds_remaining(device)
+	if not device or device.type ~= "authorized" then
+		return nil
+	end
+	local remaining = (tonumber(device.auth_expiry or "0") or 0) - os.time()
+	if remaining < 0 then
+		remaining = 0
+	end
+	return remaining
+end
+
+local function captive_api_json(device)
+	local portal_url = portal_base_url() .. "/portal"
+	local parts = {}
+
+	if is_unrestricted_device(device) then
+		parts[#parts + 1] = '"captive":false'
+		local remaining = auth_seconds_remaining(device)
+		if remaining and remaining > 0 then
+			parts[#parts + 1] = '"seconds-remaining":' .. tostring(remaining)
+		end
+		parts[#parts + 1] = '"can-extend-session":false'
+	else
+		parts[#parts + 1] = '"captive":true'
+		parts[#parts + 1] = '"user-portal-url":"' .. json_escape(portal_url) .. '"'
+		parts[#parts + 1] = '"can-extend-session":false'
+	end
+
+	return "{" .. table.concat(parts, ",") .. "}"
+end
+
+local function blocked_html()
+	return [[<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>设备已被拉黑 - WiFiDog V3</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+		.container { background: white; border-radius: 8px; padding: 34px; box-shadow: 0 10px 34px rgba(0,0,0,.14); max-width: 440px; width: 90%; text-align: center; }
+		h1 { color: #b3261e; font-size: 24px; margin-bottom: 12px; }
+		p { color: #555; line-height: 1.7; }
+		.info { margin-top: 18px; padding: 12px; background: #fff4f3; border-radius: 6px; color: #7a271a; font-size: 14px; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h1>设备已被拉黑</h1>
+		<p>当前设备已被管理员加入黑名单，无法访问公网资源，也不能通过授权码自助解除限制。</p>
+		<div class="info">如需恢复访问，请联系网络管理员处理。</div>
+	</div>
+</body>
+</html>]]
+end
+
+local function portal_html(redirect_url, error_msg)
+	local theme = setting_text("portal_theme", "classic", 32)
+	if theme ~= "classic" and theme ~= "dark" and theme ~= "emerald" and theme ~= "warm" then
+		theme = "classic"
+	end
+	local page_title = setting_text("portal_title", "网络认证", 80)
+	local page_prompt = setting_text("portal_prompt", "请输入授权码以访问互联网", 256)
+	local page_hint = setting_text("portal_hint", "如需获取授权码，请联系网络管理员。认证成功后会自动确认网络状态并尝试关闭认证窗口。", 512)
+	local button_text = setting_text("portal_button_text", "认证上网", 40)
+	local code_label = setting_text("portal_code_label", "授权码", 40)
+	local code_placeholder = setting_text("portal_code_placeholder", "请输入授权码", 80)
+	local error_block = ""
+	if error_msg and error_msg ~= "" then
+		error_block = '<div class="message error" id="message">' .. html_escape(error_msg) .. '</div>'
+	else
+		error_block = '<div class="message" id="message" style="display:none"></div>'
+	end
+
+	return [[<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>]] .. html_escape(page_title) .. [[ - WiFiDog V3</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			min-height: 100vh;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			padding: 20px;
+		}
+		.container {
+			border-radius: 8px;
+			padding: 36px;
+			max-width: 420px;
+			width: 100%;
+		}
+		h1 { text-align: center; margin-bottom: 8px; font-size: 24px; font-weight: 650; }
+		.subtitle { text-align: center; margin-bottom: 24px; font-size: 14px; line-height: 1.6; }
+		.form-group { margin-bottom: 16px; }
+		label { display: block; margin-bottom: 6px; font-weight: 500; }
+		input[type="text"] {
+			width: 100%;
+			padding: 12px;
+			border: 1px solid;
+			border-radius: 6px;
+			font-size: 16px;
+		}
+		input[type="text"]:focus { outline: none; }
+		button {
+			width: 100%;
+			padding: 12px;
+			border: none;
+			border-radius: 6px;
+			font-size: 16px;
+			font-weight: 600;
+			cursor: pointer;
+		}
+		button:disabled { opacity: .72; cursor: wait; }
+		.message {
+			padding: 10px;
+			border-radius: 6px;
+			margin-bottom: 16px;
+			text-align: center;
+			font-size: 14px;
+		}
+		.error { color: #b91c1c; background: #fee2e2; }
+		.success { color: #166534; background: #dcfce7; }
+		.info {
+			margin-top: 16px;
+			padding: 12px;
+			border-radius: 6px;
+			font-size: 13px;
+			text-align: center;
+			line-height: 1.6;
+		}
+		]] .. portal_theme_css(theme) .. [[
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h1>]] .. html_escape(page_title) .. [[</h1>
+		<p class="subtitle">]] .. html_escape_multiline(page_prompt) .. [[</p>
+		]] .. error_block .. [[
+		<form method="POST" action="/portal" id="auth-form">
+			<input type="hidden" name="action" value="auth">
+			<input type="hidden" name="redirect_url" value="]] .. html_escape(redirect_url) .. [[">
+			<div class="form-group">
+				<label>]] .. html_escape(code_label) .. [[</label>
+				<input type="text" name="auth_code" placeholder="]] .. html_escape(code_placeholder) .. [[" required autofocus>
+			</div>
+			<button type="submit" id="submit-button" data-button-text="]] .. html_escape(button_text) .. [[">]] .. html_escape(button_text) .. [[</button>
+		</form>
+		<div class="info">]] .. html_escape_multiline(page_hint) .. [[</div>
+	</div>
+	<script>
+	(function() {
+		var form = document.getElementById('auth-form');
+		var button = document.getElementById('submit-button');
+		var message = document.getElementById('message');
+		var buttonText = button.getAttribute('data-button-text') || '认证上网';
+		function showError(text) {
+			message.className = 'message error';
+			message.textContent = text || '认证失败';
+			message.style.display = 'block';
+			button.disabled = false;
+			button.textContent = buttonText;
+		}
+		function fetchJson(url) {
+			var sep = url.indexOf('?') >= 0 ? '&' : '?';
+			return fetch(url + sep + '_=' + Date.now(), {
+				cache: 'no-store',
+				headers: { 'Accept': 'application/captive+json, application/json' }
+			}).then(function(r) {
+				return r.json();
+			});
+		}
+		function fireLegacyProbes() {
+			['/generate_204', '/hotspot-detect.html', '/library/test/success.html', '/ncsi.txt'].forEach(function(url) {
+				try {
+					fetch(url + '?complete=' + Date.now(), { cache: 'no-store' }).catch(function() {});
+				} catch (e) {}
+			});
+		}
+		function isAppleCaptiveCandidate() {
+			var ua = navigator.userAgent || '';
+			return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+		}
+		function tryCloseCaptiveWindow() {
+			fireLegacyProbes();
+			window.setTimeout(function() {
+				try {
+					window.open('', '_self');
+					window.close();
+				} catch (e) {}
+			}, 250);
+			window.setTimeout(function() {
+				if (isAppleCaptiveCandidate()) {
+					window.location.href = 'http://captive.apple.com/hotspot-detect.html';
+				}
+			}, 1300);
+		}
+		function showSuccess(data) {
+			var seconds = parseInt((data && data.wait_seconds) || '3', 10);
+			if (!seconds || seconds < 1) seconds = 3;
+			document.body.innerHTML = '<div class="container"><h1>认证成功</h1><p class="subtitle">正在确认网络状态，预计 <span id="countdown">' + seconds + '</span> 秒内关闭认证窗口。</p><div class="message success" id="success-message">已提交认证，请稍候...</div></div>';
+			var countdown = document.getElementById('countdown');
+			var successMessage = document.getElementById('success-message');
+			var timer = window.setInterval(function() {
+				seconds -= 1;
+				if (countdown) countdown.textContent = String(Math.max(seconds, 0));
+				if (seconds <= 0) window.clearInterval(timer);
+			}, 1000);
+			pollCaptiveApi((data && data.api_url) || '/captive-portal/api', successMessage);
+		}
+		function pollCaptiveApi(apiUrl, successMessage) {
+			var attempts = 0;
+			var maxAttempts = 12;
+			function next(delay) {
+				window.setTimeout(check, delay);
+			}
+			function check() {
+				attempts += 1;
+				fetchJson(apiUrl).then(function(status) {
+					if (status && status.captive === false) {
+						if (successMessage) successMessage.textContent = '网络状态已确认，正在关闭认证窗口...';
+						tryCloseCaptiveWindow();
+						return;
+					}
+					if (attempts >= maxAttempts) {
+						if (successMessage) successMessage.textContent = '认证已完成，如窗口未自动关闭请手动关闭。';
+						tryCloseCaptiveWindow();
+						return;
+					}
+					if (successMessage) successMessage.textContent = '正在等待系统放行网络...';
+					next(1000);
+				}).catch(function() {
+					if (attempts >= maxAttempts) {
+						if (successMessage) successMessage.textContent = '认证已完成，如窗口未自动关闭请手动关闭。';
+						tryCloseCaptiveWindow();
+						return;
+					}
+					next(1000);
+				});
+			}
+			next(500);
+		}
+		form.addEventListener('submit', function(e) {
+			e.preventDefault();
+			button.disabled = true;
+			button.textContent = '正在认证...';
+			var body = new URLSearchParams(new FormData(form)).toString();
+			fetch('/portal', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+				body: body,
+				cache: 'no-store'
+			}).then(function(r) {
+				return r.json();
+			}).then(function(data) {
+				if (data.success) {
+					showSuccess(data);
+				} else {
+					showError(data.message || '认证失败');
+				}
+			}).catch(function() {
+				showError('认证请求失败，请稍后重试');
+			});
+		});
+	})();
+	</script>
+</body>
+</html>]]
+end
+
+local function original_url(path, uri)
+	local host = os.getenv("HTTP_HOST") or ""
+	if host == "" then
+		return ""
+	end
+	if path == "/portal" then
+		return ""
+	end
+	return "http://" .. host .. tostring(uri or "/")
+end
+
+local function is_captive_api_path(path)
+	path = tostring(path or "")
+	return path == "/captive-portal/api"
+		or path == "/.well-known/captive-portal"
+		or path == "/api/captive-portal"
+end
+
+local function legacy_probe_response(path)
+	local p = tostring(path or ""):lower()
+	if p == "/generate_204" or p == "/gen_204" then
+		return "204 No Content", "text/plain; charset=utf-8", ""
+	end
+	if p == "/hotspot-detect.html" or p == "/library/test/success.html" then
+		return "200 OK", "text/html; charset=utf-8", "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
+	end
+	if p == "/ncsi.txt" then
+		return "200 OK", "text/plain; charset=utf-8", "Microsoft NCSI"
+	end
+	if p == "/connecttest.txt" then
+		return "200 OK", "text/plain; charset=utf-8", "Microsoft Connect Test"
+	end
+	if p == "/canonical.html" or p == "/connectivity-check.html" then
+		return "200 OK", "text/html; charset=utf-8", "NetworkManager is online"
+	end
+	return nil
+end
+
+local function handle()
+	local method = os.getenv("REQUEST_METHOD") or "GET"
+	local client_ip = get_client_ip()
+	local client_mac = get_client_mac(client_ip)
+	local device = resolve_client_device(client_ip, client_mac)
+	local path, query, uri = request_target()
+	local query_form = parse_form(query)
+
+	if is_captive_api_path(path) then
+		captive_json_response(captive_api_json(device))
+		return
+	end
+
+	if is_unrestricted_device(device) then
+		local status, content_type, body = legacy_probe_response(path)
+		if status then
+			response(status, content_type, body)
+			return
+		end
+	end
+
+	if device and device.type == "blacklist" then
+		if method == "POST" then
+			json_response('{"success":false,"message":"当前设备已被拉黑，无法自助授权"}')
+		else
+			response("200 OK", "text/html; charset=utf-8", blocked_html())
+		end
+		return
+	end
+
+	if method == "POST" then
+		local form = parse_form(read_body())
+		if form.action == "auth" and form.auth_code and form.auth_code ~= "" then
+			local ok, message, used_code = validate_auth_code(form.auth_code)
+			if ok then
+				if client_mac == "" then
+					json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
+					return
+				end
+				authorize_client(client_mac, client_ip, "code", used_code)
+				json_response('{"success":true,"message":"认证成功","wait_seconds":3,"api_url":"/captive-portal/api","completion_url":"http://captive.apple.com/hotspot-detect.html","redirect":"' .. json_escape(form.redirect_url or "") .. '"}')
+				return
+			end
+			json_response('{"success":false,"message":"' .. json_escape(message) .. '"}')
+			return
+		end
+		json_response('{"success":false,"message":"无效的请求"}')
+		return
+	end
+
+	local redirect_url = query_form.redirect_url or query_form.url or original_url(path, uri)
+	local error_msg = query_form.error or ""
+	response("200 OK", "text/html; charset=utf-8", portal_html(redirect_url, error_msg))
+end
+
+handle()

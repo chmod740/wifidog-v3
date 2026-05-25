@@ -1,0 +1,638 @@
+#!/bin/sh /etc/rc.common
+
+START=90
+STOP=15
+
+NAME="wifidog_v3"
+NFT_TABLE="wifidog_v3"
+PORTAL_ROOT="/www/wifidog_v3"
+PORTAL_CGI="/www/wifidog_v3/cgi-bin/wifidog_v3/portal"
+PORTAL_PID="/var/run/wifidog_v3_portal.pid"
+EXPIRY_PID="/var/run/wifidog_v3_expiry.pid"
+DNSMASQ_CAPTIVE_CONF="/tmp/dnsmasq.d/wifidog_v3.conf"
+ODHCPD_DHCP_SECTION="lan"
+EXTRA_COMMANDS="check_expiry_cron"
+EXTRA_HELP="	check_expiry_cron	Remove expired temporary authorizations"
+
+_log() { logger -t "$NAME" "$1"; }
+
+is_auth_valid() {
+	local auth_expiry="$1"
+	[ -n "$auth_expiry" ] && [ "$auth_expiry" -gt "$(date +%s)" ] 2>/dev/null
+}
+
+resolve_iface() {
+	local iface="$1"
+	local resolved
+
+	[ -z "$iface" ] && return
+	if ip link show "$iface" >/dev/null 2>&1; then
+		echo "$iface"
+		return
+	fi
+
+	resolved=$(uci -q get "network.${iface}.device" 2>/dev/null)
+	[ -n "$resolved" ] && echo "$resolved" || echo "$iface"
+}
+
+nft_str() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+mac_lc() {
+	printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+lan_match_ifaces() {
+	local iface="$1"
+	local port
+
+	[ -n "$iface" ] && echo "$iface"
+	if [ -d "/sys/class/net/$iface/brif" ]; then
+		for port in /sys/class/net/"$iface"/brif/*; do
+			[ -e "$port" ] && basename "$port"
+		done
+	fi
+}
+
+add_lan_jump_rules() {
+	local base_chain="$1"
+	local target_chain="$2"
+	local iface escaped
+
+	for iface in $FW_LAN_IFACES; do
+		escaped=$(nft_str "$iface")
+		echo "add rule inet $NFT_TABLE $base_chain iifname \"$escaped\" jump $target_chain" >> "$NFT_FILE"
+	done
+}
+
+cleanup_nft() {
+	if command -v nft >/dev/null 2>&1; then
+		nft delete table inet "$NFT_TABLE" >/dev/null 2>&1
+	fi
+}
+
+cleanup_legacy_iptables() {
+	local ipt=""
+
+	command -v iptables-nft >/dev/null 2>&1 && ipt="iptables-nft"
+	[ -z "$ipt" ] && command -v iptables >/dev/null 2>&1 && ipt="iptables"
+	[ -z "$ipt" ] && return 0
+
+	while num=$($ipt -t nat -L PREROUTING --line-numbers -n 2>/dev/null | awk '$2 == "wifidog_v3" { print $1; exit }'); [ -n "$num" ]; do
+		$ipt -t nat -D PREROUTING "$num" 2>/dev/null || break
+	done
+	while num=$($ipt -L FORWARD --line-numbers -n 2>/dev/null | awk '$2 == "wifidog_v3" { print $1; exit }'); [ -n "$num" ]; do
+		$ipt -D FORWARD "$num" 2>/dev/null || break
+	done
+
+	$ipt -t nat -F wifidog_v3 2>/dev/null
+	$ipt -t nat -X wifidog_v3 2>/dev/null
+	$ipt -F wifidog_v3 2>/dev/null
+	$ipt -X wifidog_v3 2>/dev/null
+}
+
+stop_legacy_uhttpd_portal() {
+	local portal_port="$1"
+	local pid
+
+	if uci -q get uhttpd.wifidog_v3 >/dev/null 2>&1; then
+		uci -q delete uhttpd.wifidog_v3
+		uci -q commit uhttpd
+		/etc/init.d/uhttpd restart >/dev/null 2>&1 || true
+	fi
+
+	for pid in $(ps w 2>/dev/null | awk -v port="$portal_port" '
+		/uhttpd/ && /\/www\/wifidog_v3/ {
+			if ($0 ~ ("-p[[:space:]]+([^[:space:]]+:)?" port "([[:space:]]|$)")) print $1
+		}
+	'); do
+		kill "$pid" >/dev/null 2>&1 || true
+	done
+}
+
+kill_portal_processes() {
+	local pid
+
+	for pid in $(ps w 2>/dev/null | awk '/[l]ua/ && /\/usr\/share\/wifidog_v3\/portal_server\.lua/ { print $1 }'); do
+		[ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true
+	done
+	for pid in $(ps w 2>/dev/null | awk '/[u]httpd/ && /\/www\/wifidog_v3/ { print $1 }'); do
+		[ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true
+	done
+}
+
+cleanup_firewall() {
+	cleanup_nft
+	cleanup_legacy_iptables
+}
+
+reload_dnsmasq() {
+	if [ -x /etc/init.d/dnsmasq ]; then
+		/etc/init.d/dnsmasq reload >/dev/null 2>&1 || /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+	fi
+}
+
+reload_odhcpd() {
+	if [ -x /etc/init.d/odhcpd ]; then
+		/etc/init.d/odhcpd reload >/dev/null 2>&1 || /etc/init.d/odhcpd restart >/dev/null 2>&1 || true
+	fi
+}
+
+portal_url_for_dhcp() {
+	local router_ip portal_port
+
+	router_ip=$(uci -q get network.lan.ipaddr 2>/dev/null)
+	[ -n "$router_ip" ] || router_ip="192.168.1.1"
+	portal_port=$(uci -q get wifidog_v3.settings.portal_port 2>/dev/null)
+	[ -n "$portal_port" ] || portal_port="8080"
+
+	if [ "$portal_port" = "80" ]; then
+		echo "http://$router_ip/captive-portal/api"
+	else
+		echo "http://$router_ip:$portal_port/captive-portal/api"
+	fi
+}
+
+setup_odhcpd_captive_portal_advertisement() {
+	local api_url current saved
+
+	api_url=$(portal_url_for_dhcp)
+	uci -q get "dhcp.$ODHCPD_DHCP_SECTION" >/dev/null 2>&1 || return 0
+
+	current=$(uci -q get "dhcp.$ODHCPD_DHCP_SECTION.captive_portal_uri" 2>/dev/null)
+	saved=$(uci -q get wifidog_v3.settings.odhcpd_prev_captive_portal_uri_saved 2>/dev/null)
+	if [ "$saved" != "1" ]; then
+		if [ "$current" = "$api_url" ]; then
+			uci -q delete wifidog_v3.settings.odhcpd_prev_captive_portal_uri 2>/dev/null || true
+			uci -q set wifidog_v3.settings.odhcpd_prev_captive_portal_uri_was_set=0
+		elif [ -n "$current" ]; then
+			uci -q set "wifidog_v3.settings.odhcpd_prev_captive_portal_uri=$current"
+			uci -q set wifidog_v3.settings.odhcpd_prev_captive_portal_uri_was_set=1
+		else
+			uci -q delete wifidog_v3.settings.odhcpd_prev_captive_portal_uri 2>/dev/null || true
+			uci -q set wifidog_v3.settings.odhcpd_prev_captive_portal_uri_was_set=0
+		fi
+		uci -q set wifidog_v3.settings.odhcpd_prev_captive_portal_uri_saved=1
+		uci -q commit wifidog_v3
+	fi
+
+	if [ "$current" != "$api_url" ]; then
+		uci -q set "dhcp.$ODHCPD_DHCP_SECTION.captive_portal_uri=$api_url"
+		uci -q commit dhcp
+		reload_odhcpd
+		_log "Captive Portal API advertised via odhcpd DHCP/RA: $api_url"
+	fi
+}
+
+cleanup_odhcpd_captive_portal_advertisement() {
+	local saved was_set prev current api_url
+
+	saved=$(uci -q get wifidog_v3.settings.odhcpd_prev_captive_portal_uri_saved 2>/dev/null)
+	if [ "$saved" != "1" ]; then
+		current=$(uci -q get "dhcp.$ODHCPD_DHCP_SECTION.captive_portal_uri" 2>/dev/null)
+		api_url=$(portal_url_for_dhcp)
+		if [ -n "$current" ] && [ "$current" = "$api_url" ]; then
+			uci -q delete "dhcp.$ODHCPD_DHCP_SECTION.captive_portal_uri" 2>/dev/null || true
+			uci -q commit dhcp
+			reload_odhcpd
+		fi
+		return 0
+	fi
+
+	was_set=$(uci -q get wifidog_v3.settings.odhcpd_prev_captive_portal_uri_was_set 2>/dev/null)
+	prev=$(uci -q get wifidog_v3.settings.odhcpd_prev_captive_portal_uri 2>/dev/null)
+	if [ "$was_set" = "1" ]; then
+		uci -q set "dhcp.$ODHCPD_DHCP_SECTION.captive_portal_uri=$prev"
+	else
+		uci -q delete "dhcp.$ODHCPD_DHCP_SECTION.captive_portal_uri" 2>/dev/null || true
+	fi
+	uci -q commit dhcp
+
+	uci -q delete wifidog_v3.settings.odhcpd_prev_captive_portal_uri_saved 2>/dev/null || true
+	uci -q delete wifidog_v3.settings.odhcpd_prev_captive_portal_uri_was_set 2>/dev/null || true
+	uci -q delete wifidog_v3.settings.odhcpd_prev_captive_portal_uri 2>/dev/null || true
+	uci -q commit wifidog_v3
+	reload_odhcpd
+}
+
+setup_captive_portal_advertisement() {
+	local api_url tmp
+
+	api_url=$(portal_url_for_dhcp)
+	setup_odhcpd_captive_portal_advertisement
+	mkdir -p "$(dirname "$DNSMASQ_CAPTIVE_CONF")"
+	tmp="${DNSMASQ_CAPTIVE_CONF}.$$"
+	{
+		echo "# WiFiDog V3 Captive Portal API advertisement"
+		echo "# RFC 8910 DHCPv4 option 114, pointing to the RFC 8908 API."
+		echo "dhcp-option=114,$api_url"
+		echo "dhcp-option=option6:103,$api_url"
+	} > "$tmp"
+
+	if [ -f "$DNSMASQ_CAPTIVE_CONF" ] && cmp -s "$tmp" "$DNSMASQ_CAPTIVE_CONF"; then
+		rm -f "$tmp"
+		return 0
+	fi
+
+	mv "$tmp" "$DNSMASQ_CAPTIVE_CONF"
+	reload_dnsmasq
+	_log "Captive Portal API advertised via DHCP option 114: $api_url"
+}
+
+cleanup_captive_portal_advertisement() {
+	if [ -e "$DNSMASQ_CAPTIVE_CONF" ]; then
+		rm -f "$DNSMASQ_CAPTIVE_CONF"
+		reload_dnsmasq
+	fi
+	cleanup_odhcpd_captive_portal_advertisement
+}
+
+portal_running() {
+	local pid
+	[ -s "$PORTAL_PID" ] || return 1
+	pid=$(cat "$PORTAL_PID" 2>/dev/null)
+	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || return 1
+	ps w 2>/dev/null | awk -v p="$pid" '$1 == p && /[u]httpd/ && /\/www\/wifidog_v3/ { found=1 } END { exit found ? 0 : 1 }'
+}
+
+start_portal_server() {
+	local portal_port
+
+	if portal_running; then
+		return 0
+	fi
+
+	portal_port=$(uci -q get wifidog_v3.settings.portal_port 2>/dev/null)
+	[ -n "$portal_port" ] || portal_port="8080"
+	stop_legacy_uhttpd_portal "$portal_port"
+	kill_portal_processes
+
+	if ! command -v uhttpd >/dev/null 2>&1; then
+		_log "uhttpd is required for WiFiDog V3 portal"
+		return 1
+	fi
+	if [ ! -x "$PORTAL_CGI" ]; then
+		_log "Portal CGI not found or not executable: $PORTAL_CGI"
+		return 1
+	fi
+
+	mkdir -p /var/run
+	rm -f "$PORTAL_PID"
+	if ! start-stop-daemon -S -b -m -p "$PORTAL_PID" -x /usr/sbin/uhttpd -- \
+		-f \
+		-p "0.0.0.0:$portal_port" \
+		-h "$PORTAL_ROOT" \
+		-x "/cgi-bin" \
+		-E "/cgi-bin/wifidog_v3/portal" \
+		-I "cgi-bin/wifidog_v3/portal" \
+		-D \
+		-t 8 \
+		-T 2 \
+		-N 80 \
+		-n 20 \
+		>/dev/null 2>&1; then
+		_log "Failed to start uhttpd portal server"
+		return 1
+	fi
+	_log "uhttpd portal server started on port $portal_port"
+}
+
+stop_portal_server() {
+	local pid
+
+	if [ -s "$PORTAL_PID" ]; then
+		pid=$(cat "$PORTAL_PID" 2>/dev/null)
+		[ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true
+		sleep 1
+		[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && kill -9 "$pid" >/dev/null 2>&1 || true
+	fi
+	kill_portal_processes
+	rm -f "$PORTAL_PID"
+}
+
+expiry_running() {
+	local pid
+	[ -s "$EXPIRY_PID" ] || return 1
+	pid=$(cat "$EXPIRY_PID" 2>/dev/null)
+	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+start_expiry_worker() {
+	if expiry_running; then
+		return 0
+	fi
+
+	mkdir -p /var/run
+	(
+		while true; do
+			sleep 60
+			/etc/init.d/wifidog_v3 check_expiry_cron
+		done
+	) >/dev/null 2>&1 &
+	echo "$!" > "$EXPIRY_PID"
+}
+
+stop_expiry_worker() {
+	local pid
+	if [ -s "$EXPIRY_PID" ]; then
+		pid=$(cat "$EXPIRY_PID" 2>/dev/null)
+		[ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true
+	fi
+	rm -f "$EXPIRY_PID"
+}
+
+add_nat_bypass_device() {
+	local cfg="$1"
+	local mac type auth_expiry
+
+	config_get mac "$cfg" mac
+	config_get type "$cfg" type
+	config_get auth_expiry "$cfg" auth_expiry
+	[ -z "$mac" ] && return
+
+	case "$type" in
+		whitelist)
+			echo "add rule inet $NFT_TABLE portal_nat ether saddr $(mac_lc "$mac") return" >> "$NFT_FILE"
+			;;
+		authorized)
+			if is_auth_valid "$auth_expiry"; then
+				echo "add rule inet $NFT_TABLE portal_nat ether saddr $(mac_lc "$mac") return" >> "$NFT_FILE"
+			fi
+			;;
+	esac
+}
+
+add_filter_device() {
+	local cfg="$1"
+	local mac type auth_expiry wan
+
+	config_get mac "$cfg" mac
+	config_get type "$cfg" type
+	config_get auth_expiry "$cfg" auth_expiry
+	[ -z "$mac" ] && return
+
+	wan=$(nft_str "$FW_WAN_IFACE")
+	case "$type" in
+		whitelist)
+			echo "add rule inet $NFT_TABLE portal_forward ether saddr $(mac_lc "$mac") accept" >> "$NFT_FILE"
+			;;
+		authorized)
+			if is_auth_valid "$auth_expiry"; then
+				echo "add rule inet $NFT_TABLE portal_forward ether saddr $(mac_lc "$mac") accept" >> "$NFT_FILE"
+			fi
+			;;
+		blacklist)
+			echo "add rule inet $NFT_TABLE portal_forward ether saddr $(mac_lc "$mac") oifname \"$wan\" reject" >> "$NFT_FILE"
+			echo "add rule inet $NFT_TABLE portal_forward ether saddr $(mac_lc "$mac") accept" >> "$NFT_FILE"
+			;;
+	esac
+}
+
+add_pre_filter_allow_device() {
+	local cfg="$1"
+	local mac type auth_expiry
+
+	config_get mac "$cfg" mac
+	config_get type "$cfg" type
+	config_get auth_expiry "$cfg" auth_expiry
+	[ -z "$mac" ] && return
+
+	case "$type" in
+		whitelist)
+			echo "add rule inet $NFT_TABLE portal_pre_filter ether saddr $(mac_lc "$mac") return" >> "$NFT_FILE"
+			;;
+		authorized)
+			if is_auth_valid "$auth_expiry"; then
+				echo "add rule inet $NFT_TABLE portal_pre_filter ether saddr $(mac_lc "$mac") return" >> "$NFT_FILE"
+			fi
+			;;
+	esac
+}
+
+add_pre_filter_blacklist_device() {
+	local cfg="$1"
+	local mac type
+
+	config_get mac "$cfg" mac
+	config_get type "$cfg" type
+	[ -z "$mac" ] && return
+
+	if [ "$type" = "blacklist" ]; then
+		echo "add rule inet $NFT_TABLE portal_pre_filter ether saddr $(mac_lc "$mac") tcp dport 80 return" >> "$NFT_FILE"
+		echo "add rule inet $NFT_TABLE portal_pre_filter ether saddr $(mac_lc "$mac") tcp dport 443 return" >> "$NFT_FILE"
+		echo "add rule inet $NFT_TABLE portal_pre_filter ether saddr $(mac_lc "$mac") drop" >> "$NFT_FILE"
+	fi
+}
+
+setup_nft() {
+	local wan_iface lan_iface portal_port enabled router_ip lan_subnet netmask wan
+	local err_file="/tmp/wifidog_v3.nft.err"
+
+	config_load "$NAME"
+	config_get enabled settings enabled
+	config_get wan_iface settings wan_interface
+	config_get lan_iface settings lan_interface
+	config_get portal_port settings portal_port "8080"
+	config_get lan_subnet settings lan_subnet ""
+
+	if [ "$enabled" != "1" ]; then
+		_log "WiFiDog V3 is disabled, skipping firewall setup"
+		return 0
+	fi
+
+	if ! command -v nft >/dev/null 2>&1; then
+		_log "nft command not found; firewall4/nftables is required"
+		return 1
+	fi
+
+	if [ -z "$wan_iface" ]; then
+		wan_iface=$(ip route show default 2>/dev/null | awk '{ print $5; exit }')
+		[ -z "$wan_iface" ] && wan_iface=$(uci -q get network.wan.device 2>/dev/null)
+		[ -z "$wan_iface" ] && wan_iface="eth1"
+		_log "Auto-detected WAN interface: $wan_iface"
+	fi
+	wan_iface=$(resolve_iface "$wan_iface")
+
+	if [ -z "$lan_iface" ]; then
+		lan_iface=$(uci -q get network.lan.device 2>/dev/null)
+		[ -z "$lan_iface" ] && lan_iface="br-lan"
+	fi
+	lan_iface=$(resolve_iface "$lan_iface")
+
+	router_ip=$(uci -q get network.lan.ipaddr 2>/dev/null)
+	[ -z "$router_ip" ] && router_ip="192.168.1.1"
+
+	if [ -z "$lan_subnet" ]; then
+		netmask=$(uci -q get network.lan.netmask 2>/dev/null)
+		[ -z "$netmask" ] && netmask="255.255.255.0"
+		case "$netmask" in
+			255.255.255.0) lan_subnet="${router_ip%.*}.0/24" ;;
+			255.255.0.0) lan_subnet="${router_ip%.*.*}.0/16" ;;
+			255.0.0.0) lan_subnet="${router_ip%%.*}.0.0.0/8" ;;
+			*) lan_subnet="${router_ip%.*}.0/24" ;;
+		esac
+	fi
+
+	FW_WAN_IFACE="$wan_iface"
+	FW_LAN_IFACES=$(lan_match_ifaces "$lan_iface")
+	wan=$(nft_str "$wan_iface")
+	_log "WiFiDog V3 starting: WAN=$wan_iface LAN=$FW_LAN_IFACES IP=$router_ip Portal=$portal_port Subnet=$lan_subnet"
+
+	cleanup_firewall
+
+	NFT_FILE="/tmp/wifidog_v3.nft"
+	{
+		echo "add table inet $NFT_TABLE"
+		echo "add chain inet $NFT_TABLE early_filter { type filter hook prerouting priority -310; policy accept; }"
+		echo "add chain inet $NFT_TABLE early_nat { type nat hook prerouting priority -199; policy accept; }"
+		echo "add chain inet $NFT_TABLE prerouting { type nat hook prerouting priority -100; policy accept; }"
+		echo "add chain inet $NFT_TABLE forward { type filter hook forward priority -1; policy accept; }"
+		echo "add chain inet $NFT_TABLE portal_pre_filter"
+		echo "add chain inet $NFT_TABLE portal_nat"
+		echo "add chain inet $NFT_TABLE portal_forward"
+		echo "add rule inet $NFT_TABLE portal_pre_filter ip daddr $lan_subnet return"
+		echo "add rule inet $NFT_TABLE portal_pre_filter ip daddr $router_ip return"
+		echo "add rule inet $NFT_TABLE portal_pre_filter ip6 daddr { fc00::/7, fe80::/10, ff00::/8 } return"
+		echo "add rule inet $NFT_TABLE portal_pre_filter udp sport 68 udp dport 67 return"
+		echo "add rule inet $NFT_TABLE portal_pre_filter udp sport 67 udp dport 68 return"
+		echo "add rule inet $NFT_TABLE portal_nat ip daddr $lan_subnet return"
+		echo "add rule inet $NFT_TABLE portal_nat ip daddr $router_ip return"
+		echo "add rule inet $NFT_TABLE portal_nat udp sport 68 udp dport 67 return"
+		echo "add rule inet $NFT_TABLE portal_nat udp sport 67 udp dport 68 return"
+		echo "add rule inet $NFT_TABLE portal_nat udp dport 53 return"
+		echo "add rule inet $NFT_TABLE portal_nat tcp dport 53 return"
+	} > "$NFT_FILE"
+
+	add_lan_jump_rules early_filter portal_pre_filter
+	add_lan_jump_rules early_nat portal_nat
+	add_lan_jump_rules prerouting portal_nat
+	add_lan_jump_rules forward portal_forward
+
+	config_foreach add_pre_filter_allow_device device
+	config_foreach add_pre_filter_blacklist_device device
+	{
+		echo "add rule inet $NFT_TABLE portal_pre_filter udp dport 53 return"
+		echo "add rule inet $NFT_TABLE portal_pre_filter tcp dport 53 return"
+		echo "add rule inet $NFT_TABLE portal_pre_filter tcp dport 80 return"
+		echo "add rule inet $NFT_TABLE portal_pre_filter tcp dport 443 return"
+		echo "add rule inet $NFT_TABLE portal_pre_filter meta nfproto ipv6 drop"
+		echo "add rule inet $NFT_TABLE portal_pre_filter drop"
+	} >> "$NFT_FILE"
+
+	config_foreach add_nat_bypass_device device
+	echo "add rule inet $NFT_TABLE portal_nat tcp dport 80 redirect to :$portal_port" >> "$NFT_FILE"
+	echo "add rule inet $NFT_TABLE portal_nat tcp dport 443 redirect to :$portal_port" >> "$NFT_FILE"
+
+	config_foreach add_filter_device device
+	{
+		echo "add rule inet $NFT_TABLE portal_forward oifname \"$wan\" udp dport 53 accept"
+		echo "add rule inet $NFT_TABLE portal_forward oifname \"$wan\" tcp dport 53 accept"
+		echo "add rule inet $NFT_TABLE portal_forward oifname \"$wan\" reject"
+		echo "add rule inet $NFT_TABLE portal_forward accept"
+	} >> "$NFT_FILE"
+
+	if ! nft -f "$NFT_FILE" 2>"$err_file"; then
+		_log "Failed to apply nftables rules: $(cat "$err_file" 2>/dev/null)"
+		cleanup_nft
+		return 1
+	fi
+
+	rm -f "$err_file"
+	_log "WiFiDog V3 nftables rules applied successfully"
+}
+
+check_expiry() {
+	config_load "$NAME"
+	config_foreach check_device_expiry device
+}
+
+check_device_expiry() {
+	local cfg="$1"
+	local type auth_expiry mac
+
+	config_get type "$cfg" type
+	config_get auth_expiry "$cfg" auth_expiry
+	config_get mac "$cfg" mac
+
+	if [ "$type" = "authorized" ] && [ -n "$auth_expiry" ] && [ "$auth_expiry" -le "$(date +%s)" ] 2>/dev/null; then
+		_log "Authorization expired for MAC: $mac"
+		uci -q delete "wifidog_v3.$cfg"
+	fi
+}
+
+start_service() {
+	local enabled portal_port
+
+	config_load "$NAME"
+	config_get enabled settings enabled
+	config_get portal_port settings portal_port "8080"
+
+	if [ "$enabled" != "1" ]; then
+		_log "WiFiDog V3 is disabled"
+		stop_expiry_worker
+		stop_portal_server
+		cleanup_firewall
+		cleanup_captive_portal_advertisement
+		rm -f /tmp/wifidog_v3_ip_sessions 2>/dev/null
+		return 0
+	fi
+
+	setup_captive_portal_advertisement
+	setup_nft || return 1
+	start_portal_server || return 1
+	start_expiry_worker
+}
+
+stop_service() {
+	stop_expiry_worker
+	stop_portal_server
+	cleanup_firewall
+	cleanup_captive_portal_advertisement
+	rm -f /tmp/wifidog_v3_ip_sessions 2>/dev/null
+	_log "WiFiDog V3 service stopped"
+}
+
+service_triggers() {
+	procd_add_reload_trigger "$NAME"
+	procd_add_interface_trigger "interface.*" 200 /etc/init.d/wifidog_v3 reload
+}
+
+reload_service() {
+	local enabled
+
+	config_load "$NAME"
+	config_get enabled settings enabled
+	if [ "$enabled" != "1" ]; then
+		stop_service
+		return 0
+	fi
+
+	setup_captive_portal_advertisement
+	setup_nft || return 1
+	start_portal_server
+	start_expiry_worker
+	_log "WiFiDog V3 service reloaded"
+}
+
+check_expiry_cron() {
+	check_expiry
+	uci -q commit "$NAME"
+}
+
+start() {
+	start_service "$@"
+}
+
+stop() {
+	stop_service "$@"
+}
+
+reload() {
+	reload_service "$@"
+}
+
+restart() {
+	stop_service
+	start_service "$@"
+}
