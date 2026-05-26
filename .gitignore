@@ -4,6 +4,7 @@
 # Build outputs
 dist/
 *.ipk
+*.apk
 *.tar.gz
 *.img
 *.img.gz
@@ -39,4 +40,7 @@ htmlcov/
 # Local VM/container transfer artifacts
 *.b64
 wv3.ipk
+wv3.apk
+s.lua
 utm_smoke.out
+*.out

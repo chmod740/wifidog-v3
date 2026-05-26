@@ -9,6 +9,7 @@ Expected containers:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -22,6 +23,7 @@ WAN_URL = "http://10.89.0.10/"
 PORTAL_URL = "http://10.88.0.2:8080/portal"
 CAPTIVE_API_URL = "http://10.88.0.2:8080/captive-portal/api"
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PKG_MANAGER = os.environ.get("PKG_MANAGER", "opkg")
 
 passed = 0
 failed = 0
@@ -62,6 +64,18 @@ def client_post(url: str, data: str) -> subprocess.CompletedProcess[str]:
 
 def router_lua(script: str) -> subprocess.CompletedProcess[str]:
     return dexec(ROUTER, "lua", "-", input_text=script)
+
+
+def package_installed() -> bool:
+    if PKG_MANAGER == "apk":
+        return dexec(ROUTER, "apk", "info", "-e", "luci-app-wifidog-v3").returncode == 0
+    return "luci-app-wifidog-v3" in dexec(ROUTER, "opkg", "list-installed").stdout
+
+
+def remove_package() -> subprocess.CompletedProcess[str]:
+    if PKG_MANAGER == "apk":
+        return dexec(ROUTER, "apk", "del", "luci-app-wifidog-v3", check=True)
+    return dexec(ROUTER, "opkg", "remove", "luci-app-wifidog-v3", check=True)
 
 
 def client_mac() -> str:
@@ -165,7 +179,7 @@ def main() -> int:
     mac = client_mac()
     setup(mac)
 
-    ok("IPK installed", "luci-app-wifidog-v3" in dexec(ROUTER, "opkg", "list-installed").stdout)
+    ok("Package installed", package_installed())
     ok("No package uhttpd portal config", dexec(ROUTER, "uci", "-q", "get", "uhttpd.wifidog_v3").returncode != 0)
     ok("uhttpd portal process running", dsh(ROUTER, "pid=$(cat /var/run/wifidog_v3_portal.pid 2>/dev/null); [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null && ps w | grep -q \"^[[:space:]]*$pid[[:space:]].*[u]httpd.*\\/www\\/wifidog_v3\"").returncode == 0)
     ok("No LuaSocket portal process", dsh(ROUTER, "ps w | grep -q '[p]ortal_server.lua'").returncode != 0)
@@ -507,8 +521,8 @@ c.action_import_config()
     ok("Disabled system restores odhcpd captive URI", dexec(ROUTER, "uci", "-q", "get", "dhcp.lan.captive_portal_uri").returncode != 0)
     ok("Disabled system removes short IP session cache", dexec(ROUTER, "test", "!", "-e", "/tmp/wifidog_v3_ip_sessions").returncode == 0)
 
-    dexec(ROUTER, "opkg", "remove", "luci-app-wifidog-v3", check=True)
-    ok("Uninstall removes package record", dsh(ROUTER, "opkg list-installed | grep -q '^luci-app-wifidog-v3 '").returncode != 0)
+    remove_package()
+    ok("Uninstall removes package record", not package_installed())
     ok("Uninstall releases portal process", dsh(ROUTER, "ps w | grep '[u]httpd' | grep -q '/www/wifidog_v3'").returncode != 0)
     ok("Uninstall removes portal pid file", dexec(ROUTER, "test", "!", "-e", "/var/run/wifidog_v3_portal.pid").returncode == 0)
     ok("Uninstall removes expiry pid file", dexec(ROUTER, "test", "!", "-e", "/var/run/wifidog_v3_expiry.pid").returncode == 0)

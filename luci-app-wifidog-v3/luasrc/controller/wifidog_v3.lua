@@ -274,6 +274,14 @@ local function uci_cli_set(expr)
 	return sys.call("uci -q set " .. shell_quote(expr) .. " >/dev/null 2>&1") == 0
 end
 
+local function uci_cli_set_nonempty(path, value)
+	value = tostring(value or "")
+	if value == "" then
+		return true
+	end
+	return uci_cli_set(path .. "=" .. value)
+end
+
 local function uci_cli_delete(path)
 	return sys.call("uci -q delete " .. shell_quote(path) .. " >/dev/null 2>&1") == 0
 end
@@ -634,56 +642,68 @@ local function apply_runtime_after_config()
 end
 
 local function restore_backup_payload(payload)
-	sys.call("uci -q revert wifidog_v3 >/dev/null 2>&1")
-
-	local ok = true
-	for section, s in pairs(uci_sections_cli()) do
-		if s[".type"] == "device" or s[".type"] == "authcode" then
-			ok = uci_cli_delete("wifidog_v3." .. section) and ok
+	local ok, err = pcall(function()
+		local uci = get_uci()
+		local function set_nonempty(section, option, value)
+			value = tostring(value or "")
+			if value ~= "" then
+				uci:set("wifidog_v3", section, option, value)
+			end
 		end
-	end
 
-	sys.call("uci -q delete " .. shell_quote("wifidog_v3.settings") .. " >/dev/null 2>&1")
-	ok = ok and uci_cli_set("wifidog_v3.settings=wifidog_v3")
-	for _, key in ipairs(settings_keys) do
-		if payload.settings[key] ~= nil then
-			ok = ok and uci_cli_set("wifidog_v3.settings." .. key .. "=" .. payload.settings[key])
+		uci:revert("wifidog_v3")
+		uci:foreach("wifidog_v3", "device", function(s)
+			uci:delete("wifidog_v3", s[".name"])
+		end)
+		uci:foreach("wifidog_v3", "authcode", function(s)
+			uci:delete("wifidog_v3", s[".name"])
+		end)
+
+		uci:delete("wifidog_v3", "settings")
+		uci:section("wifidog_v3", "wifidog_v3", "settings")
+		for _, key in ipairs(settings_keys) do
+			if payload.settings[key] ~= nil then
+				set_nonempty("settings", key, payload.settings[key])
+			end
 		end
-	end
 
-	for _, dev in ipairs(payload.devices) do
-		local section = mac_to_section(dev.mac)
-		ok = ok
-			and uci_cli_set("wifidog_v3." .. section .. "=device")
-			and uci_cli_set("wifidog_v3." .. section .. ".mac=" .. dev.mac)
-			and uci_cli_set("wifidog_v3." .. section .. ".ip=" .. dev.ip)
-			and uci_cli_set("wifidog_v3." .. section .. ".hostname=" .. dev.hostname)
-			and uci_cli_set("wifidog_v3." .. section .. ".note=" .. dev.note)
-			and uci_cli_set("wifidog_v3." .. section .. ".type=" .. dev.type)
-			and uci_cli_set("wifidog_v3." .. section .. ".auth_expiry=" .. dev.auth_expiry)
-			and uci_cli_set("wifidog_v3." .. section .. ".auth_source=" .. dev.auth_source)
-			and uci_cli_set("wifidog_v3." .. section .. ".auth_code=" .. dev.auth_code)
-			and uci_cli_set("wifidog_v3." .. section .. ".created=" .. dev.created)
-	end
+		for _, dev in ipairs(payload.devices) do
+			local section = mac_to_section(dev.mac)
+			uci:section("wifidog_v3", "device", section)
+			uci:set("wifidog_v3", section, "mac", dev.mac)
+			set_nonempty(section, "ip", dev.ip)
+			set_nonempty(section, "hostname", dev.hostname)
+			set_nonempty(section, "note", dev.note)
+			uci:set("wifidog_v3", section, "type", dev.type)
+			uci:set("wifidog_v3", section, "auth_expiry", dev.auth_expiry)
+			set_nonempty(section, "auth_source", dev.auth_source)
+			set_nonempty(section, "auth_code", dev.auth_code)
+			set_nonempty(section, "created", dev.created)
+		end
 
-	for idx, code in ipairs(payload.auth_codes) do
-		local safe_code = code.code:gsub("[^%w_]", "_"):sub(1, 32)
-		local section = string.format("auth_%s_%02d", safe_code, idx)
-		ok = ok
-			and uci_cli_set("wifidog_v3." .. section .. "=authcode")
-			and uci_cli_set("wifidog_v3." .. section .. ".code=" .. code.code)
-			and uci_cli_set("wifidog_v3." .. section .. ".max_uses=" .. code.max_uses)
-			and uci_cli_set("wifidog_v3." .. section .. ".used_count=" .. code.used_count)
-			and uci_cli_set("wifidog_v3." .. section .. ".expiry_days=" .. code.expiry_days)
-			and uci_cli_set("wifidog_v3." .. section .. ".created_date=" .. code.created_date)
-			and uci_cli_set("wifidog_v3." .. section .. ".enabled=" .. code.enabled)
-	end
+		for idx, code in ipairs(payload.auth_codes) do
+			local safe_code = code.code:gsub("[^%w_]", "_"):sub(1, 32)
+			local section = string.format("auth_%s_%02d", safe_code, idx)
+			uci:section("wifidog_v3", "authcode", section)
+			uci:set("wifidog_v3", section, "code", code.code)
+			uci:set("wifidog_v3", section, "max_uses", code.max_uses)
+			uci:set("wifidog_v3", section, "used_count", code.used_count)
+			uci:set("wifidog_v3", section, "expiry_days", code.expiry_days)
+			uci:set("wifidog_v3", section, "created_date", code.created_date)
+			uci:set("wifidog_v3", section, "enabled", code.enabled)
+		end
 
-	if ok and uci_cli_commit("wifidog_v3") then
+		if not uci:commit("wifidog_v3") then
+			error("uci commit failed")
+		end
+	end)
+
+	if ok then
 		apply_runtime_after_config()
 		return true
 	end
 
+	sys.call("logger -t wifidog_v3 " .. shell_quote("restore failed: " .. tostring(err)))
 	sys.call("uci -q revert wifidog_v3 >/dev/null 2>&1")
 	return false
 end
