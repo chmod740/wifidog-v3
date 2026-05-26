@@ -4,6 +4,10 @@
 
 WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由器上管理待授权设备、白名单、黑名单、授权码和 Captive Portal 认证流程。
 
+## 功能演示
+
+![Captive Portal 功能演示](docs/assets/captive-portal-demo.gif)
+
 ## 功能特性
 
 - 网络设备扫描：从 ARP 表和 DHCP leases 中识别内网设备。

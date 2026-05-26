@@ -4,6 +4,10 @@
 
 WiFiDog V3 is a LuCI network authentication system for OpenWrt. It manages pending devices, whitelists, blacklists, authorization codes, and Captive Portal access control directly on the router.
 
+## Demo
+
+![Captive Portal demo](docs/assets/captive-portal-demo.gif)
+
 ## Features
 
 - Device discovery from ARP tables and DHCP leases.
