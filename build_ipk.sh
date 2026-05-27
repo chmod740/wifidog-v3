@@ -8,7 +8,7 @@ PKG_RELEASE="1"
 PKG_ARCH="all"
 PKG_MAINTAINER="WiFiDog V3 Team"
 PKG_DESCRIPTION="WiFiDog V3 Network Authentication System for OpenWrt"
-PKG_DEPENDS="firewall4, nftables-json, lua, uhttpd, libuci-lua, luci-compat, luci-lib-jsonc"
+PKG_DEPENDS="firewall4, nftables-json, lua, uhttpd, libuci-lua, luci-compat, luci-lib-jsonc, luasocket"
 
 BUILD_DIR="/tmp/ipk-build"
 APP_DIR="$(cd "$(dirname "$0")" && pwd)/luci-app-wifidog-v3"
@@ -44,6 +44,7 @@ Description: ${PKG_DESCRIPTION}
   - Captive portal with HTTP redirect
   - Time-based authorization (24h default)
   - Auth code generation with usage limits
+  - Optional FreeRADIUS PAP authentication
 EOF
 
 # ============================================

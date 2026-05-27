@@ -16,6 +16,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 - 黑名单：设备可访问内网资源，禁止访问公网资源，Portal 页面仅提示被拉黑，不能自助授权。
 - 手动授权：管理后台可授权设备默认 24 小时访问权限。
 - 授权码：支持自定义授权码、可用次数、授权码有效期、单独授权时长、启用/停用和自助认证。
+- FreeRADIUS：支持 RADIUS PAP 账号密码认证，可与授权码认证并存，并支持 `Session-Timeout` 控制授权时长。
 - Captive Portal 兼容：
   - RFC 8908 Captive Portal API
   - RFC 8910 DHCP option 114
@@ -23,6 +24,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
   - iOS、Android、Windows、NetworkManager 等旧探测路径
 - Portal 页面：使用独立 uhttpd 实例，支持主题切换和后台自定义提示词、标题、按钮文案。
 - 配置备份恢复：支持导入/导出系统设置、黑白名单、备注、授权码和 Portal 页面配置。
+- 运行日志：后台可查看本系统运行日志和相关 syslog，并支持清空本系统日志。
 - Passwall2 共存：使用更早优先级的 nftables 规则，尽量在分流规则前完成认证控制。
 - 安全卸载：卸载时清理 nftables、Portal 进程、DHCP/RA 广告、运行状态和配置文件。
 
@@ -43,6 +45,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 - libuci-lua
 - luci-compat
 - luci-lib-jsonc
+- luasocket
 
 ## 构建
 
@@ -114,8 +117,13 @@ apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.0-r1.apk
 - `wan_interface`：WAN 接口
 - `portal_port`：Portal 服务端口，默认 `8080`
 - `lan_subnet`：内网网段
+- `auth_code_enabled`：是否启用授权码认证，默认 `1`
 - `auth_timeout`：授权时长，单位分钟，默认 `1440`
 - `authcode.*.auth_minutes`：单个授权码使用后的授权时长，单位分钟；为空时使用 `auth_timeout`
+- `radius_enabled`：是否启用 RADIUS 认证，默认 `0`
+- `radius_server` / `radius_port` / `radius_secret`：FreeRADIUS 服务器地址、端口和共享密钥
+- `radius_nas_id`：发送给 RADIUS 服务器的 NAS Identifier
+- `radius_timeout` / `radius_retries`：RADIUS 请求超时和重试次数
 - `portal_theme`：Portal 页面主题
 - `portal_title`：Portal 页面标题
 - `portal_prompt`：Portal 主提示词

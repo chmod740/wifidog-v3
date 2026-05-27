@@ -207,11 +207,12 @@ function loadAuthorized() {
 		devices.forEach(function(dev, idx) {
 			var noteId = makeNoteId('auth-note', dev, idx);
 			var authCode = dev.auth_code ? '（' + dev.auth_code + '）' : '';
+			var radiusUser = dev.radius_user ? '（' + dev.radius_user + '）' : '';
 			var tr = document.createElement('tr');
 			addTextCell(tr, dev.ip);
 			addTextCell(tr, dev.mac);
 			addTextCell(tr, dev.hostname || '-');
-			addTextCell(tr, (dev.auth_source_text || '-') + authCode);
+			addTextCell(tr, (dev.auth_source_text || '-') + (dev.auth_source === 'radius' ? radiusUser : authCode));
 			addTextCell(tr, dev.remaining_text || '-');
 			addNoteCell(tr, noteId, dev.note || '');
 			var actions = document.createElement('td');

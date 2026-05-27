@@ -16,7 +16,7 @@ define Package/$(PKG_NAME)
   SUBMENU:=3. Applications
   TITLE:=WiFiDog V3 Network Authentication System
   PKGARCH:=all
-  DEPENDS:=+firewall4 +nftables-json +lua +uhttpd +libuci-lua +luci-compat +luci-lib-jsonc
+  DEPENDS:=+firewall4 +nftables-json +lua +uhttpd +libuci-lua +luci-compat +luci-lib-jsonc +luasocket
 endef
 
 define Package/$(PKG_NAME)/description

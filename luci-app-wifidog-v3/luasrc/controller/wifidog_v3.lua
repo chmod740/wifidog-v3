@@ -3,6 +3,7 @@ module("luci.controller.wifidog_v3", package.seeall)
 local sys = require "luci.sys"
 local http = require "luci.http"
 local jsonc = require "luci.jsonc"
+local LOG_FILE = "/var/log/wifidog_v3.log"
 
 function index()
 	if not nixio.fs.access("/etc/config/wifidog_v3") then
@@ -29,8 +30,11 @@ function index()
 	-- Page 5: Backup / Restore (配置备份)
 	entry({"admin", "services", appname, "backup"}, form(appname .. "/backup"), _("配置备份"), 5)
 
-	-- Page 6: Settings (设置)
-	entry({"admin", "services", appname, "settings"}, cbi(appname .. "/settings"), _("系统设置"), 6)
+	-- Page 6: Runtime logs (运行日志)
+	entry({"admin", "services", appname, "logs"}, form(appname .. "/logs"), _("运行日志"), 6)
+
+	-- Page 7: Settings (设置)
+	entry({"admin", "services", appname, "settings"}, cbi(appname .. "/settings"), _("系统设置"), 7)
 
 	-- AJAX endpoints for device management
 	entry({"admin", "services", appname, "add_whitelist"}, call("action_add_whitelist")).leaf = true
@@ -55,6 +59,10 @@ function index()
 	-- AJAX endpoints for backup / restore
 	entry({"admin", "services", appname, "export_config"}, call("action_export_config")).leaf = true
 	entry({"admin", "services", appname, "import_config"}, call("action_import_config")).leaf = true
+
+	-- AJAX endpoints for runtime logs
+	entry({"admin", "services", appname, "runtime_logs"}, call("action_runtime_logs")).leaf = true
+	entry({"admin", "services", appname, "clear_runtime_logs"}, call("action_clear_runtime_logs")).leaf = true
 
 	-- AJAX endpoint for service status
 	entry({"admin", "services", appname, "status"}, call("action_status")).leaf = true
@@ -270,6 +278,33 @@ local function shell_quote(s)
 	return "'" .. s:gsub("'", "'\\''") .. "'"
 end
 
+local function clean_log_message(message)
+	message = tostring(message or ""):gsub("[\r\n]", " ")
+	return message:sub(1, 512)
+end
+
+local function append_runtime_log(message)
+	message = clean_log_message(message)
+	if message == "" then
+		return
+	end
+	sys.call("mkdir -p /var/log >/dev/null 2>&1")
+	local fp = io.open(LOG_FILE, "a")
+	if fp then
+		fp:write(os.date("%Y-%m-%d %H:%M:%S"), " [admin] ", message, "\n")
+		fp:close()
+	end
+	sys.call("logger -t wifidog_v3 " .. shell_quote(message) .. " >/dev/null 2>&1")
+end
+
+local function mask_secret(value)
+	value = tostring(value or "")
+	if #value <= 4 then
+		return "****"
+	end
+	return value:sub(1, 4) .. string.rep("*", math.min(8, #value - 4))
+end
+
 local function uci_cli_set(expr)
 	return sys.call("uci -q set " .. shell_quote(expr) .. " >/dev/null 2>&1") == 0
 end
@@ -474,7 +509,15 @@ local settings_keys = {
 	"lan_interface",
 	"portal_port",
 	"lan_subnet",
+	"auth_code_enabled",
 	"auth_timeout",
+	"radius_enabled",
+	"radius_server",
+	"radius_port",
+	"radius_secret",
+	"radius_nas_id",
+	"radius_timeout",
+	"radius_retries",
 	"auto_detect_wan",
 	"portal_theme",
 	"portal_title",
@@ -491,7 +534,15 @@ local settings_defaults = {
 	lan_interface = "",
 	portal_port = "8080",
 	lan_subnet = "",
+	auth_code_enabled = "1",
 	auth_timeout = "1440",
+	radius_enabled = "0",
+	radius_server = "",
+	radius_port = "1812",
+	radius_secret = "",
+	radius_nas_id = "wifidog-v3",
+	radius_timeout = "3",
+	radius_retries = "1",
 	auto_detect_wan = "1",
 	portal_theme = "classic",
 	portal_title = "网络认证",
@@ -513,7 +564,10 @@ local settings_value_maxlen = {
 	portal_hint = 512,
 	portal_button_text = 40,
 	portal_code_label = 40,
-	portal_code_placeholder = 80
+	portal_code_placeholder = 80,
+	radius_server = 128,
+	radius_secret = 128,
+	radius_nas_id = 80
 }
 
 local device_types_allowed = {
@@ -619,6 +673,7 @@ local function normalize_backup_payload(payload)
 			auth_expiry = clean_import_value(dev.auth_expiry, 32) or "0",
 			auth_source = clean_import_value(dev.auth_source, 32) or "",
 			auth_code = clean_import_value(dev.auth_code, 128) or "",
+			radius_user = clean_import_value(dev.radius_user, 128) or "",
 			created = clean_import_value(dev.created, 32) or tostring(os.time())
 		}
 	end
@@ -706,6 +761,7 @@ local function restore_backup_payload(payload)
 			set_required(section, "auth_expiry", dev.auth_expiry)
 			set_nonempty(section, "auth_source", dev.auth_source)
 			set_nonempty(section, "auth_code", dev.auth_code)
+			set_nonempty(section, "radius_user", dev.radius_user)
 			set_nonempty(section, "created", dev.created)
 		end
 
@@ -751,6 +807,8 @@ local function auth_source_text(source)
 		return "管理页面手动授权"
 	elseif source == "code" then
 		return "授权码自助授权"
+	elseif source == "radius" then
+		return "RADIUS账号认证"
 	end
 	return "未知"
 end
@@ -790,6 +848,7 @@ function action_add_whitelist()
 		and uci_cli_commit("wifidog_v3")
 
 	if ok then
+		append_runtime_log("设备已加入白名单 MAC=" .. mac .. " IP=" .. tostring(ip or ""))
 		reload_firewall()
 	end
 
@@ -827,6 +886,7 @@ function action_add_blacklist()
 		and uci_cli_commit("wifidog_v3")
 
 	if ok then
+		append_runtime_log("设备已加入黑名单 MAC=" .. mac .. " IP=" .. tostring(ip or ""))
 		reload_firewall()
 	end
 
@@ -869,6 +929,7 @@ function action_add_authorize()
 		and uci_cli_commit("wifidog_v3")
 
 	if ok then
+		append_runtime_log("管理员手动授权设备 MAC=" .. mac .. " IP=" .. tostring(ip or "") .. " 到期=" .. os.date("%Y-%m-%d %H:%M:%S", expiry))
 		reload_firewall()
 	end
 
@@ -919,6 +980,9 @@ function action_update_note()
 	end
 
 	ok = ok and uci_cli_commit("wifidog_v3")
+	if ok then
+		append_runtime_log("设备备注已更新 MAC=" .. mac)
+	end
 	http.prepare_content("application/json")
 	http.write_json({ success = ok, message = ok and "备注已保存" or "备注保存失败" })
 end
@@ -938,6 +1002,7 @@ function action_remove_device()
 	local ok = move_device_to_pending_cli(mac)
 	if ok then
 		uci_cli_commit("wifidog_v3")
+		append_runtime_log("设备已移回待授权 MAC=" .. mac)
 		reload_firewall()
 	end
 
@@ -1064,7 +1129,8 @@ function action_list_authorized()
 					remaining_text = remaining_text,
 					auth_source = s.auth_source or "",
 					auth_source_text = auth_source_text(s.auth_source),
-					auth_code = s.auth_code or ""
+					auth_code = s.auth_code or "",
+					radius_user = s.radius_user or ""
 				}
 			end
 		end
@@ -1160,6 +1226,7 @@ function action_generate_code()
 		return
 	end
 
+	append_runtime_log("授权码已生成 CODE=" .. mask_secret(code:upper()) .. " 次数=" .. max_uses .. " 有效期天数=" .. expiry_days .. " 授权分钟=" .. (auth_minutes ~= "" and auth_minutes or "默认"))
 	http.prepare_content("application/json")
 	http.write_json({ success = true, message = "授权码已生成" })
 end
@@ -1181,6 +1248,7 @@ function action_delete_code()
 		end
 	end)
 	uci:commit("wifidog_v3")
+	append_runtime_log("授权码已删除 CODE=" .. mask_secret(code:upper()))
 
 	http.prepare_content("application/json")
 	http.write_json({ success = true, message = "授权码已删除" })
@@ -1224,6 +1292,7 @@ function action_import_config()
 
 	local restored, restore_err = restore_backup_payload(normalized)
 	if restored then
+		append_runtime_log(string.format("配置已恢复：设备 %d 个，授权码 %d 个", #normalized.devices, #normalized.auth_codes))
 		http.write_json({
 			success = true,
 			message = string.format(
@@ -1269,6 +1338,62 @@ function action_status()
 
 	http.prepare_content("application/json")
 	http.write_json({ running = (nft_ok and portal_ok), nft = nft_ok, portal = portal_ok, enabled = (enabled == "1") })
+end
+
+local function parse_log_lines(text, source, limit, query, out)
+	local lowered_query = query ~= "" and query:lower() or ""
+	for line in tostring(text or ""):gmatch("[^\r\n]+") do
+		if lowered_query == "" or line:lower():find(lowered_query, 1, true) then
+			out[#out + 1] = { source = source, line = line }
+		end
+	end
+	while #out > limit do
+		table.remove(out, 1)
+	end
+end
+
+local function runtime_log_stat()
+	local size = tonumber(trim(sys.exec("wc -c < " .. shell_quote(LOG_FILE) .. " 2>/dev/null"))) or 0
+	return { path = LOG_FILE, size = size }
+end
+
+function action_runtime_logs()
+	local source = http.formvalue("source") or "app"
+	local query = trim(http.formvalue("query") or ""):sub(1, 80)
+	local limit = tonumber(http.formvalue("lines") or "200") or 200
+	if limit < 50 then
+		limit = 50
+	elseif limit > 1000 then
+		limit = 1000
+	end
+
+	local logs = {}
+	if source == "app" or source == "all" then
+		local app_logs = sys.exec("tail -n " .. tostring(limit) .. " " .. shell_quote(LOG_FILE) .. " 2>/dev/null") or ""
+		parse_log_lines(app_logs, "app", limit, query, logs)
+	end
+	if source == "syslog" or source == "all" then
+		local sys_logs = sys.exec("logread 2>/dev/null | grep -E 'wifidog_v3|wifidog-v3|/www/wifidog_v3' | tail -n " .. tostring(limit)) or ""
+		parse_log_lines(sys_logs, "syslog", limit, query, logs)
+	end
+
+	http.prepare_content("application/json")
+	http.write_json({ success = true, lines = logs, stat = runtime_log_stat(), source = source, query = query })
+end
+
+function action_clear_runtime_logs()
+	sys.call("mkdir -p /var/log >/dev/null 2>&1")
+	local ok = false
+	local fp = io.open(LOG_FILE, "w")
+	if fp then
+		ok = true
+		fp:close()
+	end
+	if ok then
+		append_runtime_log("运行日志已由管理后台清空")
+	end
+	http.prepare_content("application/json")
+	http.write_json({ success = ok, message = ok and "运行日志已清空" or "运行日志清空失败" })
 end
 
 -- ============================================================
