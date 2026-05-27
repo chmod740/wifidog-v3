@@ -8,6 +8,7 @@ Expected containers:
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,9 @@ import time
 ROUTER = "openwrt-test-v3"
 CLIENT = "test-client"
 WAN = "wan-server"
+RADIUS = "wifidog-radius-v3"
+RADIUS_IP = "10.89.0.20"
+RADIUS_SECRET = "testing123"
 WAN_URL = "http://10.89.0.10/"
 PORTAL_URL = "http://10.88.0.2:8080/portal"
 CAPTIVE_API_URL = "http://10.88.0.2:8080/captive-portal/api"
@@ -27,6 +31,7 @@ PKG_MANAGER = os.environ.get("PKG_MANAGER", "opkg")
 
 passed = 0
 failed = 0
+atexit.register(lambda: subprocess.run(["docker", "rm", "-f", RADIUS], capture_output=True, text=True, timeout=20))
 
 
 def run(args: list[str], check: bool = False, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -87,7 +92,51 @@ def client_mac() -> str:
     raise RuntimeError("client LAN MAC not found")
 
 
+def start_radius() -> None:
+    conf_dir = Path("/tmp/wifidog_v3_radius")
+    conf_dir.mkdir(parents=True, exist_ok=True)
+    (conf_dir / "clients.conf").write_text(f"""
+client openwrt {{
+    ipaddr = 10.89.0.2
+    secret = {RADIUS_SECRET}
+}}
+
+client localhost {{
+    ipaddr = 127.0.0.1
+    secret = {RADIUS_SECRET}
+}}
+""".strip() + "\n")
+    (conf_dir / "users").write_text("""
+raduser Cleartext-Password := "radpass"
+    Session-Timeout := 300
+""".lstrip())
+
+    run(["docker", "rm", "-f", RADIUS])
+    run([
+        "docker", "run", "-d",
+        "--name", RADIUS,
+        "--platform", "linux/amd64",
+        "--network", "wifidog-wan-net",
+        "--ip", RADIUS_IP,
+        "-v", f"{conf_dir / 'clients.conf'}:/etc/freeradius/clients.conf:ro",
+        "-v", f"{conf_dir / 'users'}:/etc/freeradius/users:ro",
+        "freeradius/freeradius-server:latest",
+        "-f",
+    ], check=True)
+    for _ in range(20):
+        ready = dexec(RADIUS, "radtest", "raduser", "radpass", "127.0.0.1", "0", RADIUS_SECRET)
+        if "Access-Accept" in ready.stdout:
+            return
+        time.sleep(0.5)
+    raise RuntimeError("FreeRADIUS test container did not become ready")
+
+
+def stop_radius() -> None:
+    run(["docker", "rm", "-f", RADIUS])
+
+
 def setup(mac: str) -> None:
+    start_radius()
     dsh(ROUTER, "mkdir -p /var/lock /www")
     dsh(WAN, "mkdir -p /www && printf %s WAN_OK > /www/index.html")
     dexec(WAN, "killall", "uhttpd")
@@ -115,7 +164,15 @@ set wifidog_v3.settings.lan_interface=eth0
 set wifidog_v3.settings.wan_interface=eth1
 set wifidog_v3.settings.portal_port=8080
 set wifidog_v3.settings.lan_subnet=10.88.0.0/24
+set wifidog_v3.settings.auth_code_enabled=1
 set wifidog_v3.settings.auth_timeout=1440
+set wifidog_v3.settings.radius_enabled=1
+set wifidog_v3.settings.radius_server=10.89.0.20
+set wifidog_v3.settings.radius_port=1812
+set wifidog_v3.settings.radius_secret=testing123
+set wifidog_v3.settings.radius_nas_id=wifidog-v3-test
+set wifidog_v3.settings.radius_timeout=2
+set wifidog_v3.settings.radius_retries=2
 set wifidog_v3.auth_VIP2026=authcode
 set wifidog_v3.auth_VIP2026.code=VIP2026
 set wifidog_v3.auth_VIP2026.max_uses=20
@@ -192,6 +249,8 @@ def main() -> int:
     ok("uhttpd portal process running", dsh(ROUTER, "pid=$(cat /var/run/wifidog_v3_portal.pid 2>/dev/null); [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null && ps w | grep -q \"^[[:space:]]*$pid[[:space:]].*[u]httpd.*\\/www\\/wifidog_v3\"").returncode == 0)
     ok("No LuaSocket portal process", dsh(ROUTER, "ps w | grep -q '[p]ortal_server.lua'").returncode != 0)
     ok("Portal page reachable", "网络认证" in client_get(PORTAL_URL).stdout)
+    portal_html = client_get(PORTAL_URL).stdout
+    ok("Portal page offers auth code and RADIUS methods", "授权码" in portal_html and "RADIUS用户名" in portal_html and "auth_method" in portal_html)
     pending_api = client_get(CAPTIVE_API_URL).stdout
     ok("RFC8908 API reports pending client captive", '"captive":true' in pending_api and '"user-portal-url":"http://10.88.0.2:8080/portal"' in pending_api, pending_api)
     dhcp_advert = dexec(ROUTER, "cat", "/tmp/dnsmasq.d/wifidog_v3.conf").stdout
@@ -248,7 +307,7 @@ c.action_scan_devices()
     portal_cgi = (REPO_ROOT / "luci-app-wifidog-v3/root/www/wifidog_v3/cgi-bin/wifidog_v3/portal").read_text()
     makefile = (REPO_ROOT / "luci-app-wifidog-v3/Makefile").read_text()
     ok("Portal uses uhttpd instead of LuaSocket", "/usr/sbin/uhttpd" in init_script and "PORTAL_CGI" in init_script and "require(\"socket\")" not in portal_cgi)
-    ok("Package depends on uhttpd not luasocket", "uhttpd" in build_script and "luasocket" not in build_script and "+uhttpd" in makefile and "+luasocket" not in makefile)
+    ok("Package depends on uhttpd and luasocket for portal/RADIUS", "uhttpd" in build_script and "luasocket" in build_script and "+uhttpd" in makefile and "+luasocket" in makefile)
     ok("Portal implements configurable themes and copy", "portal_theme_css" in portal_cgi and "portal_title" in portal_cgi and "portal_prompt" in portal_cgi and "portal_button_text" in portal_cgi)
     ok("Portal success polls captive API before iOS close fallback", "认证成功" in portal_cgi and "pollCaptiveApi" in portal_cgi and "captive.apple.com/hotspot-detect.html" in portal_cgi and "window.close" in portal_cgi and "window.location.replace" not in portal_cgi)
     ok("Portal keeps short IP session cache for captive re-probes", "IP_SESSION_FILE" in portal_cgi and "remember_ip_session" in portal_cgi and "resolve_client_device" in portal_cgi)
@@ -398,6 +457,13 @@ c.action_generate_code()
     default_auth = client_post(PORTAL_URL, "action=auth&auth_code=DEFAULT1440&redirect_url=http://10.89.0.10/")
     default_remaining_seconds = dsh(ROUTER, f"expr $(uci -q get wifidog_v3.{mac.replace(':', '_').lower()}.auth_expiry) - $(date +%s)").stdout.strip()
     ok("Auth code without duration falls back to default auth timeout", '"success":true' in default_auth.stdout and default_remaining_seconds.isdigit() and 86000 <= int(default_remaining_seconds) <= 86500, default_auth.stdout + default_remaining_seconds)
+    radius_auth = client_post(PORTAL_URL, "action=auth&auth_method=radius&radius_username=raduser&radius_password=radpass&redirect_url=http://10.89.0.10/")
+    radius_source = dsh(ROUTER, f"uci -q get wifidog_v3.{mac.replace(':', '_').lower()}.auth_source").stdout.strip()
+    radius_user = dsh(ROUTER, f"uci -q get wifidog_v3.{mac.replace(':', '_').lower()}.radius_user").stdout.strip()
+    radius_remaining_seconds = dsh(ROUTER, f"expr $(uci -q get wifidog_v3.{mac.replace(':', '_').lower()}.auth_expiry) - $(date +%s)").stdout.strip()
+    ok("RADIUS PAP auth accepts FreeRADIUS user and applies Session-Timeout", '"success":true' in radius_auth.stdout and radius_source == "radius" and radius_user == "raduser" and radius_remaining_seconds.isdigit() and 240 <= int(radius_remaining_seconds) <= 360, radius_auth.stdout + radius_source + radius_user + radius_remaining_seconds)
+    bad_radius_auth = client_post(PORTAL_URL, "action=auth&auth_method=radius&radius_username=raduser&radius_password=wrong")
+    ok("RADIUS PAP auth rejects invalid password", '"success":false' in bad_radius_auth.stdout, bad_radius_auth.stdout)
     ip_session = dexec(ROUTER, "cat", "/tmp/wifidog_v3_ip_sessions")
     ok("Self-service auth records short IP session for iOS re-probe", ip_session.returncode == 0 and f"10.88.0.10 {mac}" in ip_session.stdout, ip_session.stdout + ip_session.stderr)
     fallback_api = dsh(ROUTER, f"now=$(date +%s); printf '%s 10.88.0.250 {mac}\\n' \"$((now + 600))\" >> /tmp/wifidog_v3_ip_sessions; REQUEST_METHOD=GET REQUEST_URI=/captive-portal/api REMOTE_ADDR=10.88.0.250 /www/wifidog_v3/cgi-bin/wifidog_v3/portal")
@@ -548,6 +614,7 @@ c.action_import_config()
     ok("Uninstall leaves no odhcpd captive URI", dexec(ROUTER, "uci", "-q", "get", "dhcp.lan.captive_portal_uri").returncode != 0)
     ok("Uninstall removes config file", dexec(ROUTER, "test", "!", "-e", "/etc/config/wifidog_v3").returncode == 0)
     ok("Uninstall leaves WAN access working", "WAN_OK" in client_get(WAN_URL).stdout)
+    stop_radius()
 
     print(f"\nResult: {passed} passed, {failed} failed")
     return 0 if failed == 0 else 1

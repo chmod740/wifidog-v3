@@ -66,7 +66,27 @@ local function normalize_auth_minutes(value)
 	return math.floor(minutes)
 end
 
-local function effective_auth_timeout(auth_minutes)
+local function normalize_auth_seconds(value)
+	value = trim(value or "")
+	if value == "" then
+		return nil
+	end
+	if not value:match("^%d+$") then
+		return nil
+	end
+	local seconds = tonumber(value)
+	if not seconds or seconds < 1 or seconds > 31536000 then
+		return nil
+	end
+	return math.floor(seconds)
+end
+
+local function effective_auth_seconds(auth_minutes, auth_seconds)
+	local seconds = normalize_auth_seconds(auth_seconds)
+	if seconds then
+		return seconds
+	end
+
 	local timeout = normalize_auth_minutes(auth_minutes)
 	if not timeout then
 		timeout = tonumber(uci_get("wifidog_v3.settings.auth_timeout", "1440")) or 1440
@@ -74,7 +94,7 @@ local function effective_auth_timeout(auth_minutes)
 	if timeout < 1 then
 		timeout = 1440
 	end
-	return math.floor(timeout)
+	return math.floor(timeout * 60)
 end
 
 local function portal_base_url()
@@ -143,6 +163,116 @@ local function setting_text(key, default, max_len)
 	return clean_text(value, max_len)
 end
 
+local function option_enabled(key, default)
+	local value = uci_get("wifidog_v3.settings." .. key, default or "0")
+	return value == "1" or value == "true" or value == "on" or value == "yes"
+end
+
+local function pack_u16(n)
+	n = tonumber(n) or 0
+	return string.char(math.floor(n / 256) % 256, n % 256)
+end
+
+local function pack_u32(n)
+	n = tonumber(n) or 0
+	return string.char(
+		math.floor(n / 16777216) % 256,
+		math.floor(n / 65536) % 256,
+		math.floor(n / 256) % 256,
+		n % 256
+	)
+end
+
+local function unpack_u16(s, pos)
+	local a, b = s:byte(pos, pos + 1)
+	if not a or not b then
+		return nil
+	end
+	return a * 256 + b
+end
+
+local function unpack_u32(s, pos)
+	local a, b, c, d = s:byte(pos, pos + 3)
+	if not a or not b or not c or not d then
+		return nil
+	end
+	return ((a * 256 + b) * 256 + c) * 256 + d
+end
+
+local function ipv4_bytes(ip)
+	local a, b, c, d = tostring(ip or ""):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+	a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+	if not a or not b or not c or not d or a > 255 or b > 255 or c > 255 or d > 255 then
+		return nil
+	end
+	return string.char(a, b, c, d)
+end
+
+local function random_bytes(len)
+	local fp = io.open("/dev/urandom", "rb")
+	if fp then
+		local data = fp:read(len)
+		fp:close()
+		if data and #data == len then
+			return data
+		end
+	end
+
+	math.randomseed(os.time() + tonumber(tostring({}):match("0x(%x+)") or "0", 16))
+	local out = {}
+	for i = 1, len do
+		out[i] = string.char(math.random(0, 255))
+	end
+	return table.concat(out)
+end
+
+local function md5_binary(data)
+	local unique = tostring({}):gsub("[^0-9A-Fa-f]", "")
+	local name = "/tmp/wifidog_v3_md5_" .. tostring(os.time()) .. "_" .. unique
+	local fp = io.open(name, "wb")
+	if not fp then
+		return nil, "无法创建临时文件"
+	end
+	fp:write(data)
+	fp:close()
+
+	local hex = read_cmd("md5sum " .. shell_quote(name) .. " | awk '{print $1}'")
+	os.remove(name)
+	if not hex or not hex:match("^%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$") then
+		return nil, "无法计算MD5"
+	end
+
+	local bytes = {}
+	for i = 1, 32, 2 do
+		bytes[#bytes + 1] = string.char(tonumber(hex:sub(i, i + 1), 16))
+	end
+	return table.concat(bytes)
+end
+
+local function bxor_byte(a, b)
+	local result = 0
+	local bit_value = 1
+	while a > 0 or b > 0 do
+		local abit = a % 2
+		local bbit = b % 2
+		if abit ~= bbit then
+			result = result + bit_value
+		end
+		a = math.floor(a / 2)
+		b = math.floor(b / 2)
+		bit_value = bit_value * 2
+	end
+	return result
+end
+
+local function xor_strings(a, b)
+	local out = {}
+	for i = 1, #a do
+		out[i] = string.char(bxor_byte(a:byte(i), b:byte(i)))
+	end
+	return table.concat(out)
+end
+
 local function portal_theme_css(theme)
 	if theme == "dark" then
 		return [[
@@ -151,9 +281,9 @@ local function portal_theme_css(theme)
 		h1 { color: #f9fafb; }
 		.subtitle { color: #cbd5e1; }
 		label { color: #e5e7eb; }
-		input[type="text"] { border-color: #475569; background: #111827; color: #f9fafb; }
-		input[type="text"]::placeholder { color: #94a3b8; }
-		input[type="text"]:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, .2); }
+		input[type="text"], input[type="password"] { border-color: #475569; background: #111827; color: #f9fafb; }
+		input[type="text"]::placeholder, input[type="password"]::placeholder { color: #94a3b8; }
+		input[type="text"]:focus, input[type="password"]:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, .2); }
 		button { background: #38bdf8; color: #082f49; }
 		.info { background: rgba(56, 189, 248, .12); color: #cbd5e1; }
 		]]
@@ -164,8 +294,8 @@ local function portal_theme_css(theme)
 		h1 { color: #064e3b; }
 		.subtitle { color: #047857; }
 		label { color: #065f46; }
-		input[type="text"] { border-color: #86efac; background: #ffffff; }
-		input[type="text"]:focus { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, .16); }
+		input[type="text"], input[type="password"] { border-color: #86efac; background: #ffffff; }
+		input[type="text"]:focus, input[type="password"]:focus { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, .16); }
 		button { background: #059669; color: #ffffff; }
 		.info { background: #d1fae5; color: #065f46; }
 		]]
@@ -176,8 +306,8 @@ local function portal_theme_css(theme)
 		h1 { color: #7c2d12; }
 		.subtitle { color: #9a3412; }
 		label { color: #7c2d12; }
-		input[type="text"] { border-color: #fdba74; background: #fffaf5; }
-		input[type="text"]:focus { border-color: #f97316; box-shadow: 0 0 0 3px rgba(249, 115, 22, .16); }
+		input[type="text"], input[type="password"] { border-color: #fdba74; background: #fffaf5; }
+		input[type="text"]:focus, input[type="password"]:focus { border-color: #f97316; box-shadow: 0 0 0 3px rgba(249, 115, 22, .16); }
 		button { background: #ea580c; color: #ffffff; }
 		.info { background: #ffedd5; color: #7c2d12; }
 		]]
@@ -189,8 +319,8 @@ local function portal_theme_css(theme)
 		h1 { color: #111827; }
 		.subtitle { color: #6b7280; }
 		label { color: #374151; }
-		input[type="text"] { border-color: #cbd5e1; background: #fff; }
-		input[type="text"]:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .14); }
+		input[type="text"], input[type="password"] { border-color: #cbd5e1; background: #fff; }
+		input[type="text"]:focus, input[type="password"]:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .14); }
 		button { background: #2563eb; color: white; }
 		.info { background: #eff6ff; color: #4b5563; }
 	]]
@@ -356,6 +486,166 @@ local function forget_ip_session(ip)
 	end
 end
 
+local function radius_attr(attr_type, value)
+	value = tostring(value or "")
+	if #value > 253 then
+		value = value:sub(1, 253)
+	end
+	return string.char(attr_type, #value + 2) .. value
+end
+
+local function radius_encrypt_password(password, secret, authenticator)
+	password = tostring(password or "")
+	secret = tostring(secret or "")
+	if #password > 128 then
+		password = password:sub(1, 128)
+	end
+	local pad_len = 16 - (#password % 16)
+	if pad_len == 16 and #password > 0 then
+		pad_len = 0
+	end
+	password = password .. string.rep("\0", pad_len)
+	if #password == 0 then
+		password = string.rep("\0", 16)
+	end
+
+	local encrypted = {}
+	local previous = authenticator
+	for pos = 1, #password, 16 do
+		local digest, err = md5_binary(secret .. previous)
+		if not digest then
+			return nil, err
+		end
+		local block = password:sub(pos, pos + 15)
+		local cipher = xor_strings(block, digest)
+		encrypted[#encrypted + 1] = cipher
+		previous = cipher
+	end
+	return table.concat(encrypted)
+end
+
+local function radius_parse_attrs(data, start_pos)
+	local attrs = {}
+	local pos = start_pos or 21
+	while pos <= #data do
+		local attr_type = data:byte(pos)
+		local attr_len = data:byte(pos + 1)
+		if not attr_type or not attr_len or attr_len < 2 or pos + attr_len - 1 > #data then
+			break
+		end
+		local value = data:sub(pos + 2, pos + attr_len - 1)
+		attrs[#attrs + 1] = { type = attr_type, value = value }
+		pos = pos + attr_len
+	end
+	return attrs
+end
+
+local function radius_authenticate(username, password, client_mac, client_ip)
+	username = clean_text(username, 128)
+	password = tostring(password or "")
+	if username == "" then
+		return false, "请输入用户名"
+	end
+	if password == "" then
+		return false, "请输入密码"
+	end
+
+	local server = uci_get("wifidog_v3.settings.radius_server", "")
+	local secret = uci_get("wifidog_v3.settings.radius_secret", "")
+	if server == "" or secret == "" then
+		return false, "RADIUS服务器未配置"
+	end
+
+	local socket_ok, socket = pcall(require, "socket")
+	if not socket_ok or not socket or not socket.udp then
+		return false, "系统缺少LuaSocket，无法进行RADIUS认证"
+	end
+
+	local port = tonumber(uci_get("wifidog_v3.settings.radius_port", "1812")) or 1812
+	local timeout = tonumber(uci_get("wifidog_v3.settings.radius_timeout", "3")) or 3
+	local retries = tonumber(uci_get("wifidog_v3.settings.radius_retries", "1")) or 1
+	local nas_id = uci_get("wifidog_v3.settings.radius_nas_id", "wifidog-v3")
+	if nas_id == "" then
+		nas_id = "wifidog-v3"
+	end
+
+	local request_auth = random_bytes(16)
+	local password_attr, password_err = radius_encrypt_password(password, secret, request_auth)
+	if not password_attr then
+		return false, password_err or "RADIUS密码加密失败"
+	end
+
+	local attrs = {
+		radius_attr(1, username),
+		radius_attr(2, password_attr),
+		radius_attr(31, tostring(client_mac or "")),
+		radius_attr(32, nas_id),
+		radius_attr(6, pack_u32(1))
+	}
+	local nas_ip = ipv4_bytes(get_router_ip())
+	if nas_ip then
+		attrs[#attrs + 1] = radius_attr(4, nas_ip)
+	end
+	local framed_ip = ipv4_bytes(client_ip)
+	if framed_ip then
+		attrs[#attrs + 1] = radius_attr(8, framed_ip)
+	end
+
+	local attr_data = table.concat(attrs)
+	local packet_id = random_bytes(1):byte(1) or math.random(0, 255)
+	local packet = string.char(1, packet_id) .. pack_u16(20 + #attr_data) .. request_auth .. attr_data
+	local udp = socket.udp()
+	if not udp then
+		return false, "无法创建RADIUS UDP连接"
+	end
+	udp:settimeout(timeout)
+
+	local response
+	for _ = 1, math.max(1, retries) do
+		udp:sendto(packet, server, port)
+		response = udp:receivefrom()
+		if response and #response >= 20 then
+			break
+		end
+	end
+	udp:close()
+
+	if not response or #response < 20 then
+		return false, "RADIUS服务器无响应"
+	end
+
+	local code = response:byte(1)
+	local response_id = response:byte(2)
+	local response_len = unpack_u16(response, 3)
+	if response_id ~= packet_id or not response_len or response_len > #response or response_len < 20 then
+		return false, "RADIUS响应格式无效"
+	end
+	response = response:sub(1, response_len)
+
+	local response_attrs = response:sub(21)
+	local expected_auth = md5_binary(string.char(code, response_id) .. pack_u16(response_len) .. request_auth .. response_attrs .. secret)
+	if not expected_auth or response:sub(5, 20) ~= expected_auth then
+		return false, "RADIUS响应校验失败"
+	end
+
+	if code == 3 then
+		return false, "RADIUS认证失败"
+	end
+	if code ~= 2 then
+		return false, "RADIUS服务器拒绝认证"
+	end
+
+	local session_timeout = ""
+	for _, attr in ipairs(radius_parse_attrs(response, 21)) do
+		if attr.type == 27 and #attr.value == 4 then
+			session_timeout = tostring(unpack_u32(attr.value, 1) or "")
+			break
+		end
+	end
+
+	return true, "认证成功", username, session_timeout
+end
+
 local function validate_auth_code(code)
 	code = tostring(code or ""):upper()
 	if code == "" then
@@ -408,15 +698,16 @@ local function delete_devices_by_mac(mac)
 	end
 end
 
-local function authorize_client(mac, ip, source, auth_code, auth_minutes)
+local function authorize_client(mac, ip, source, auth_code, auth_minutes, auth_seconds)
 	if not mac or mac == "" then
 		return false
 	end
 
-	local timeout = effective_auth_timeout(auth_minutes)
+	local timeout = effective_auth_seconds(auth_minutes, auth_seconds)
 	local now = os.time()
-	local expiry = now + timeout * 60
+	local expiry = now + timeout
 	local section = mac_to_section(mac)
+	local auth_source = tostring(source or "code")
 
 	delete_devices_by_mac(mac)
 	uci_set("wifidog_v3." .. section .. "=device")
@@ -424,8 +715,14 @@ local function authorize_client(mac, ip, source, auth_code, auth_minutes)
 	uci_set("wifidog_v3." .. section .. ".ip=" .. tostring(ip or ""))
 	uci_set("wifidog_v3." .. section .. ".type=authorized")
 	uci_set("wifidog_v3." .. section .. ".auth_expiry=" .. tostring(expiry))
-	uci_set("wifidog_v3." .. section .. ".auth_source=" .. tostring(source or "code"))
-	uci_set("wifidog_v3." .. section .. ".auth_code=" .. tostring(auth_code or ""))
+	uci_set("wifidog_v3." .. section .. ".auth_source=" .. auth_source)
+	if auth_source == "radius" then
+		uci_set("wifidog_v3." .. section .. ".auth_code=")
+		uci_set("wifidog_v3." .. section .. ".radius_user=" .. clean_text(auth_code or "", 128))
+	else
+		uci_set("wifidog_v3." .. section .. ".auth_code=" .. tostring(auth_code or ""))
+		uci_set("wifidog_v3." .. section .. ".radius_user=")
+	end
 	uci_set("wifidog_v3." .. section .. ".created=" .. tostring(now))
 	uci_commit()
 	remember_ip_session(ip, mac, expiry)
@@ -592,11 +889,55 @@ local function portal_html(redirect_url, error_msg)
 	local button_text = setting_text("portal_button_text", "认证上网", 40)
 	local code_label = setting_text("portal_code_label", "授权码", 40)
 	local code_placeholder = setting_text("portal_code_placeholder", "请输入授权码", 80)
+	local code_enabled = option_enabled("auth_code_enabled", "1")
+	local radius_enabled = option_enabled("radius_enabled", "0")
+	if not code_enabled and not radius_enabled then
+		code_enabled = true
+	end
 	local error_block = ""
 	if error_msg and error_msg ~= "" then
 		error_block = '<div class="message error" id="message">' .. html_escape(error_msg) .. '</div>'
 	else
 		error_block = '<div class="message" id="message" style="display:none"></div>'
+	end
+	local method_controls = ""
+	if code_enabled and radius_enabled then
+		method_controls = [[
+			<div class="auth-methods">
+				<label class="auth-method"><input type="radio" name="auth_method" value="code" checked> 授权码</label>
+				<label class="auth-method"><input type="radio" name="auth_method" value="radius"> 账号密码</label>
+			</div>
+		]]
+	elseif radius_enabled then
+		method_controls = [[<input type="hidden" name="auth_method" value="radius">]]
+	else
+		method_controls = [[<input type="hidden" name="auth_method" value="code">]]
+	end
+	local code_controls = ""
+	if code_enabled then
+		code_controls = [[
+			<div class="auth-panel" data-auth-panel="code">
+				<div class="form-group">
+					<label>]] .. html_escape(code_label) .. [[</label>
+					<input type="text" name="auth_code" placeholder="]] .. html_escape(code_placeholder) .. [[" data-required-when="code">
+				</div>
+			</div>
+		]]
+	end
+	local radius_controls = ""
+	if radius_enabled then
+		radius_controls = [[
+			<div class="auth-panel" data-auth-panel="radius">
+				<div class="form-group">
+					<label>RADIUS用户名</label>
+					<input type="text" name="radius_username" placeholder="请输入账号" data-required-when="radius">
+				</div>
+				<div class="form-group">
+					<label>RADIUS密码</label>
+					<input type="password" name="radius_password" placeholder="请输入密码" data-required-when="radius">
+				</div>
+			</div>
+		]]
 	end
 
 	return [[<!DOCTYPE html>
@@ -625,14 +966,32 @@ local function portal_html(redirect_url, error_msg)
 		.subtitle { text-align: center; margin-bottom: 24px; font-size: 14px; line-height: 1.6; }
 		.form-group { margin-bottom: 16px; }
 		label { display: block; margin-bottom: 6px; font-weight: 500; }
-		input[type="text"] {
+		input[type="text"], input[type="password"] {
 			width: 100%;
 			padding: 12px;
 			border: 1px solid;
 			border-radius: 6px;
 			font-size: 16px;
 		}
-		input[type="text"]:focus { outline: none; }
+		input[type="text"]:focus, input[type="password"]:focus { outline: none; }
+		.auth-methods {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 8px;
+			margin-bottom: 16px;
+		}
+		.auth-method {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			border: 1px solid #cbd5e1;
+			border-radius: 6px;
+			padding: 10px;
+			cursor: pointer;
+			font-size: 14px;
+		}
+		.auth-panel { display: none; }
+		.auth-panel.active { display: block; }
 		button {
 			width: 100%;
 			padding: 12px;
@@ -671,10 +1030,7 @@ local function portal_html(redirect_url, error_msg)
 		<form method="POST" action="/portal" id="auth-form">
 			<input type="hidden" name="action" value="auth">
 			<input type="hidden" name="redirect_url" value="]] .. html_escape(redirect_url) .. [[">
-			<div class="form-group">
-				<label>]] .. html_escape(code_label) .. [[</label>
-				<input type="text" name="auth_code" placeholder="]] .. html_escape(code_placeholder) .. [[" required autofocus>
-			</div>
+			]] .. method_controls .. code_controls .. radius_controls .. [[
 			<button type="submit" id="submit-button" data-button-text="]] .. html_escape(button_text) .. [[">]] .. html_escape(button_text) .. [[</button>
 		</form>
 		<div class="info">]] .. html_escape_multiline(page_hint) .. [[</div>
@@ -685,6 +1041,32 @@ local function portal_html(redirect_url, error_msg)
 		var button = document.getElementById('submit-button');
 		var message = document.getElementById('message');
 		var buttonText = button.getAttribute('data-button-text') || '认证上网';
+		function selectedMethod() {
+			var checked = form.querySelector('input[name="auth_method"]:checked');
+			var hidden = form.querySelector('input[type="hidden"][name="auth_method"]');
+			return (checked && checked.value) || (hidden && hidden.value) || 'code';
+		}
+		function refreshMethod() {
+			var method = selectedMethod();
+			Array.prototype.forEach.call(form.querySelectorAll('[data-auth-panel]'), function(panel) {
+				var active = panel.getAttribute('data-auth-panel') === method;
+				panel.className = active ? 'auth-panel active' : 'auth-panel';
+				Array.prototype.forEach.call(panel.querySelectorAll('[data-required-when]'), function(input) {
+					input.required = active && input.getAttribute('data-required-when') === method;
+					if (active && !form.__focused) {
+						input.focus();
+						form.__focused = true;
+					}
+				});
+			});
+		}
+		Array.prototype.forEach.call(form.querySelectorAll('input[name="auth_method"]'), function(input) {
+			input.addEventListener('change', function() {
+				form.__focused = false;
+				refreshMethod();
+			});
+		});
+		refreshMethod();
 		function showError(text) {
 			message.className = 'message error';
 			message.textContent = text || '认证失败';
@@ -869,7 +1251,50 @@ local function handle()
 
 	if method == "POST" then
 		local form = parse_form(read_body())
-		if form.action == "auth" and form.auth_code and form.auth_code ~= "" then
+		if form.action == "auth" then
+			local code_enabled = option_enabled("auth_code_enabled", "1")
+			local radius_enabled = option_enabled("radius_enabled", "0")
+			if not code_enabled and not radius_enabled then
+				code_enabled = true
+			end
+			local auth_method = form.auth_method or ""
+			if auth_method == "" then
+				if form.auth_code and form.auth_code ~= "" then
+					auth_method = "code"
+				elseif form.radius_username and form.radius_username ~= "" then
+					auth_method = "radius"
+				else
+					auth_method = code_enabled and "code" or "radius"
+				end
+			end
+
+			if auth_method == "radius" then
+				if not radius_enabled then
+					json_response('{"success":false,"message":"RADIUS认证未启用"}')
+					return
+				end
+				local ok, message, radius_user, session_timeout = radius_authenticate(form.radius_username, form.radius_password, client_mac, client_ip)
+				if ok then
+					if client_mac == "" then
+						json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
+						return
+					end
+					authorize_client(client_mac, client_ip, "radius", radius_user, "", session_timeout)
+					json_response('{"success":true,"message":"认证成功","wait_seconds":3,"api_url":"/captive-portal/api","completion_url":"http://captive.apple.com/hotspot-detect.html","redirect":"' .. json_escape(form.redirect_url or "") .. '"}')
+					return
+				end
+				json_response('{"success":false,"message":"' .. json_escape(message) .. '"}')
+				return
+			end
+
+			if not code_enabled then
+				json_response('{"success":false,"message":"授权码认证未启用"}')
+				return
+			end
+			if not form.auth_code or form.auth_code == "" then
+				json_response('{"success":false,"message":"请输入授权码"}')
+				return
+			end
 			local ok, message, used_code, auth_minutes = validate_auth_code(form.auth_code)
 			if ok then
 				if client_mac == "" then

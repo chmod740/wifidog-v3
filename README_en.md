@@ -17,6 +17,7 @@ WiFiDog V3 is a LuCI network authentication system for OpenWrt. It manages pendi
 - Blacklist mode: LAN access allowed, public Internet blocked, self-service authorization disabled.
 - Manual authorization from LuCI with a default 24-hour validity period.
 - Authorization codes with custom code values, usage limits, code expiration, per-code authorization lifetime, enable/disable state, and self-service login.
+- FreeRADIUS PAP authentication can run alongside authorization codes and honors `Session-Timeout` for per-login access lifetime.
 - Captive Portal compatibility:
   - RFC 8908 Captive Portal API
   - RFC 8910 DHCP option 114
@@ -44,6 +45,7 @@ Runtime dependencies:
 - libuci-lua
 - luci-compat
 - luci-lib-jsonc
+- luasocket
 
 ## Build
 
@@ -115,8 +117,13 @@ Common options:
 - `wan_interface`: WAN interface
 - `portal_port`: portal port, default `8080`
 - `lan_subnet`: LAN subnet
+- `auth_code_enabled`: enable authorization-code login, default `1`
 - `auth_timeout`: authorization lifetime in minutes, default `1440`
 - `authcode.*.auth_minutes`: per-code authorization lifetime in minutes; empty values fall back to `auth_timeout`
+- `radius_enabled`: enable RADIUS authentication, default `0`
+- `radius_server` / `radius_port` / `radius_secret`: FreeRADIUS server address, port, and shared secret
+- `radius_nas_id`: NAS Identifier sent to the RADIUS server
+- `radius_timeout` / `radius_retries`: RADIUS request timeout and retry count
 - `portal_theme`: portal theme
 - `portal_title`: portal page title
 - `portal_prompt`: main portal prompt

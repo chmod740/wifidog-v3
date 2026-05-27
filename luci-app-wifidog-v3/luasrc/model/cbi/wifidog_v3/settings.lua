@@ -55,11 +55,60 @@ lan_subnet.rmempty = true
 -- Auth timeout
 s:tab("auth", translate("认证设置"))
 
+local auth_code_enabled = s:taboption("auth", Flag, "auth_code_enabled", translate("启用授权码认证"),
+	translate("允许用户在 Portal 页面输入授权码自助认证"))
+auth_code_enabled.default = "1"
+auth_code_enabled.rmempty = false
+
 local auth_timeout = s:taboption("auth", Value, "auth_timeout", translate("授权时长（分钟）"),
 	translate("设备授权后的有效时长，默认1440分钟（24小时）"))
 auth_timeout.default = "1440"
 auth_timeout.rmempty = false
 auth_timeout.datatype = "uinteger"
+
+local radius_enabled = s:taboption("auth", Flag, "radius_enabled", translate("启用RADIUS认证"),
+	translate("允许用户使用 FreeRADIUS 账号密码在 Portal 页面认证"))
+radius_enabled.default = "0"
+radius_enabled.rmempty = false
+
+local radius_server = s:taboption("auth", Value, "radius_server", translate("RADIUS服务器地址"),
+	translate("FreeRADIUS 服务器 IP 或域名"))
+radius_server.placeholder = "192.168.1.10"
+radius_server.rmempty = true
+radius_server:depends("radius_enabled", "1")
+
+local radius_port = s:taboption("auth", Value, "radius_port", translate("RADIUS认证端口"),
+	translate("RADIUS Access-Request 端口，默认 1812"))
+radius_port.default = "1812"
+radius_port.datatype = "port"
+radius_port.rmempty = true
+radius_port:depends("radius_enabled", "1")
+
+local radius_secret = s:taboption("auth", Value, "radius_secret", translate("RADIUS共享密钥"),
+	translate("需要与 FreeRADIUS clients.conf 中配置的 secret 一致"))
+radius_secret.password = true
+radius_secret.rmempty = true
+radius_secret:depends("radius_enabled", "1")
+
+local radius_nas_id = s:taboption("auth", Value, "radius_nas_id", translate("NAS Identifier"),
+	translate("发送给 RADIUS 服务器的 NAS 标识"))
+radius_nas_id.default = "wifidog-v3"
+radius_nas_id.rmempty = true
+radius_nas_id:depends("radius_enabled", "1")
+
+local radius_timeout = s:taboption("auth", Value, "radius_timeout", translate("RADIUS超时（秒）"),
+	translate("等待 RADIUS 响应的超时时间"))
+radius_timeout.default = "3"
+radius_timeout.datatype = "uinteger"
+radius_timeout.rmempty = true
+radius_timeout:depends("radius_enabled", "1")
+
+local radius_retries = s:taboption("auth", Value, "radius_retries", translate("RADIUS重试次数"),
+	translate("认证请求无响应时的重试次数"))
+radius_retries.default = "1"
+radius_retries.datatype = "uinteger"
+radius_retries.rmempty = true
+radius_retries:depends("radius_enabled", "1")
 
 -- Auto-detect WAN
 local auto_detect = s:taboption("auth", Flag, "auto_detect_wan", translate("自动检测WAN接口"),

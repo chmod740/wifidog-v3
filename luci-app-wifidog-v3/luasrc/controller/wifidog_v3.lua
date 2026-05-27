@@ -474,7 +474,15 @@ local settings_keys = {
 	"lan_interface",
 	"portal_port",
 	"lan_subnet",
+	"auth_code_enabled",
 	"auth_timeout",
+	"radius_enabled",
+	"radius_server",
+	"radius_port",
+	"radius_secret",
+	"radius_nas_id",
+	"radius_timeout",
+	"radius_retries",
 	"auto_detect_wan",
 	"portal_theme",
 	"portal_title",
@@ -491,7 +499,15 @@ local settings_defaults = {
 	lan_interface = "",
 	portal_port = "8080",
 	lan_subnet = "",
+	auth_code_enabled = "1",
 	auth_timeout = "1440",
+	radius_enabled = "0",
+	radius_server = "",
+	radius_port = "1812",
+	radius_secret = "",
+	radius_nas_id = "wifidog-v3",
+	radius_timeout = "3",
+	radius_retries = "1",
 	auto_detect_wan = "1",
 	portal_theme = "classic",
 	portal_title = "网络认证",
@@ -513,7 +529,10 @@ local settings_value_maxlen = {
 	portal_hint = 512,
 	portal_button_text = 40,
 	portal_code_label = 40,
-	portal_code_placeholder = 80
+	portal_code_placeholder = 80,
+	radius_server = 128,
+	radius_secret = 128,
+	radius_nas_id = 80
 }
 
 local device_types_allowed = {
@@ -619,6 +638,7 @@ local function normalize_backup_payload(payload)
 			auth_expiry = clean_import_value(dev.auth_expiry, 32) or "0",
 			auth_source = clean_import_value(dev.auth_source, 32) or "",
 			auth_code = clean_import_value(dev.auth_code, 128) or "",
+			radius_user = clean_import_value(dev.radius_user, 128) or "",
 			created = clean_import_value(dev.created, 32) or tostring(os.time())
 		}
 	end
@@ -706,6 +726,7 @@ local function restore_backup_payload(payload)
 			set_required(section, "auth_expiry", dev.auth_expiry)
 			set_nonempty(section, "auth_source", dev.auth_source)
 			set_nonempty(section, "auth_code", dev.auth_code)
+			set_nonempty(section, "radius_user", dev.radius_user)
 			set_nonempty(section, "created", dev.created)
 		end
 
@@ -751,6 +772,8 @@ local function auth_source_text(source)
 		return "管理页面手动授权"
 	elseif source == "code" then
 		return "授权码自助授权"
+	elseif source == "radius" then
+		return "RADIUS账号认证"
 	end
 	return "未知"
 end
@@ -1064,7 +1087,8 @@ function action_list_authorized()
 					remaining_text = remaining_text,
 					auth_source = s.auth_source or "",
 					auth_source_text = auth_source_text(s.auth_source),
-					auth_code = s.auth_code or ""
+					auth_code = s.auth_code or "",
+					radius_user = s.radius_user or ""
 				}
 			end
 		end

@@ -125,7 +125,13 @@ local backup_json = [[{
 		"lan_interface": "eth0",
 		"portal_port": "8080",
 		"lan_subnet": "192.168.77.0/24",
+		"auth_code_enabled": "1",
 		"auth_timeout": "1440",
+		"radius_enabled": "0",
+		"radius_port": "1812",
+		"radius_nas_id": "wifidog-v3",
+		"radius_timeout": "3",
+		"radius_retries": "1",
 		"auto_detect_wan": "1"
 	},
 	"devices": [
@@ -165,7 +171,8 @@ expect("portal success polls api then uses ios close fallback", portal:find("pol
 expect("portal has short ip session fallback", portal:find("IP_SESSION_FILE", 1, true) ~= nil and portal:find("resolve_client_device", 1, true) ~= nil)
 expect("portal implements captive api and legacy probes", portal:find("application/captive+json", 1, true) ~= nil and portal:find("generate_204", 1, true) ~= nil and portal:find("Microsoft NCSI", 1, true) ~= nil)
 expect("portal supports configurable themes and copy", portal:find("portal_theme_css", 1, true) ~= nil and portal:find("portal_prompt", 1, true) ~= nil and portal:find("portal_button_text", 1, true) ~= nil)
-expect("portal supports per-code auth duration", portal:find("effective_auth_timeout", 1, true) ~= nil and portal:find("auth_minutes", 1, true) ~= nil)
+expect("portal supports per-code auth duration", portal:find("effective_auth_seconds", 1, true) ~= nil and portal:find("auth_minutes", 1, true) ~= nil)
+expect("portal supports radius auth", portal:find("radius_authenticate", 1, true) ~= nil and portal:find("session_timeout", 1, true) ~= nil and portal:find("auth_method", 1, true) ~= nil)
 
 os.execute("uci -q set wifidog_v3.settings.portal_theme=warm")
 os.execute("uci -q set wifidog_v3.settings.portal_title='UTM访客网络'")

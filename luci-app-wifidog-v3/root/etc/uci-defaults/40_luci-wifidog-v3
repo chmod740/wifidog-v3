@@ -9,7 +9,15 @@ config wifidog_v3 'settings'
 	option lan_interface ''
 	option portal_port '8080'
 	option lan_subnet ''
+	option auth_code_enabled '1'
 	option auth_timeout '1440'
+	option radius_enabled '0'
+	option radius_server ''
+	option radius_port '1812'
+	option radius_secret ''
+	option radius_nas_id 'wifidog-v3'
+	option radius_timeout '3'
+	option radius_retries '1'
 	option auto_detect_wan '1'
 	option portal_theme 'classic'
 	option portal_title '网络认证'
@@ -30,6 +38,12 @@ ensure_setting() {
 }
 
 ensure_setting portal_theme classic
+ensure_setting auth_code_enabled 1
+ensure_setting radius_enabled 0
+ensure_setting radius_port 1812
+ensure_setting radius_nas_id wifidog-v3
+ensure_setting radius_timeout 3
+ensure_setting radius_retries 1
 ensure_setting portal_title '网络认证'
 ensure_setting portal_prompt '请输入授权码以访问互联网'
 ensure_setting portal_hint '如需获取授权码，请联系网络管理员。认证成功后会自动确认网络状态并尝试关闭认证窗口。'

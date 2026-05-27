@@ -128,14 +128,30 @@ cleanup_firewall() {
 }
 
 reload_dnsmasq() {
+	if command -v reload_config >/dev/null 2>&1; then
+		reload_config >/dev/null 2>&1 || true
+		return 0
+	fi
 	if [ -x /etc/init.d/dnsmasq ]; then
-		/etc/init.d/dnsmasq reload >/dev/null 2>&1 || /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+		if command -v timeout >/dev/null 2>&1; then
+			timeout 5 /etc/init.d/dnsmasq reload >/dev/null 2>&1 || timeout 5 /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+		else
+			/etc/init.d/dnsmasq reload >/dev/null 2>&1 &
+		fi
 	fi
 }
 
 reload_odhcpd() {
+	if command -v reload_config >/dev/null 2>&1; then
+		reload_config >/dev/null 2>&1 || true
+		return 0
+	fi
 	if [ -x /etc/init.d/odhcpd ]; then
-		/etc/init.d/odhcpd reload >/dev/null 2>&1 || /etc/init.d/odhcpd restart >/dev/null 2>&1 || true
+		if command -v timeout >/dev/null 2>&1; then
+			timeout 5 /etc/init.d/odhcpd reload >/dev/null 2>&1 || timeout 5 /etc/init.d/odhcpd restart >/dev/null 2>&1 || true
+		else
+			/etc/init.d/odhcpd reload >/dev/null 2>&1 &
+		fi
 	fi
 }
 
