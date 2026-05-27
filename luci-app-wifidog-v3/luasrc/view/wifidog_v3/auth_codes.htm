@@ -16,8 +16,9 @@ local style = [[
 .wifidog-msg-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
 .wifidog-msg-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
 .wifidog-form-group { margin-bottom: 12px; }
-.wifidog-form-group label { display: inline-block; width: 120px; font-weight: 500; }
+.wifidog-form-group label { display: inline-block; width: 170px; font-weight: 500; }
 .wifidog-form-group input, .wifidog-form-group select { padding: 6px 8px; border: 1px solid #ccc; border-radius: 3px; font-size: 13px; }
+.wifidog-form-hint { margin-left: 174px; margin-top: 4px; color: #777; font-size: 12px; }
 .wifidog-generate-box { background: #f8f9fa; padding: 16px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px; }
 .wifidog-generate-box h4 { margin-top: 0; margin-bottom: 12px; }
 </style>
@@ -82,6 +83,8 @@ function loadCodes() {
 		data.codes.forEach(function(c) {
 			var used = parseInt(c.used_count) || 0;
 			var max = parseInt(c.max_uses) || 0;
+			var authMinutes = parseInt(c.auth_minutes, 10);
+			var authMinutesText = authMinutes > 0 ? authMinutes + ' 分钟' : '默认';
 			var statusHtml = c.enabled == '1'
 				? '<span style="color:green;">启用</span>'
 				: '<span style="color:red;">禁用</span>';
@@ -90,6 +93,7 @@ function loadCodes() {
 			tr.innerHTML =
 				'<td><strong>' + c.code + '</strong></td>' +
 				'<td>' + used + ' / ' + max + '</td>' +
+				'<td>' + authMinutesText + '</td>' +
 				'<td>' + c.expiry_days + ' 天</td>' +
 				'<td>' + (c.created_date || '-') + '</td>' +
 				'<td>' + statusHtml + '</td>' +
@@ -109,22 +113,28 @@ function generateCode() {
 	var code = document.getElementById('new-code').value.trim();
 	var maxUses = document.getElementById('new-max-uses').value;
 	var expiryDays = document.getElementById('new-expiry-days').value;
+	var authMinutes = document.getElementById('new-auth-minutes').value.trim();
 
 	if (!code) {
 		showMessage('请输入授权码', 'error');
+		return;
+	}
+	if (authMinutes && !/^[1-9][0-9]*$/.test(authMinutes)) {
+		showMessage('授权后有效时长必须是正整数分钟，留空则使用系统默认授权时长', 'error');
 		return;
 	}
 
 	fetch(withToken(genUrl), {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-		body: formBody({ code: code, max_uses: maxUses, expiry_days: expiryDays })
+		body: formBody({ code: code, max_uses: maxUses, expiry_days: expiryDays, auth_minutes: authMinutes })
 	})
 	.then(function(r) { return r.json(); })
 	.then(function(data) {
 		if (data.success) {
 			showMessage('授权码已生成', 'success');
 			document.getElementById('new-code').value = '';
+			document.getElementById('new-auth-minutes').value = '';
 			loadCodes();
 		} else {
 			showMessage(data.message || '操作失败', 'error');
@@ -178,7 +188,12 @@ document.addEventListener('DOMContentLoaded', loadCodes);
 			<input type="number" id="new-max-uses" value="1" min="1" max="9999" style="width:100px;">
 		</div>
 		<div class="wifidog-form-group">
-			<label><%:有效期（天）：%></label>
+			<label><%:授权后有效时长（分钟）：%></label>
+			<input type="number" id="new-auth-minutes" min="1" max="525600" placeholder="留空使用默认" style="width:140px;">
+			<div class="wifidog-form-hint"><%:留空时使用系统设置里的默认授权时长%></div>
+		</div>
+		<div class="wifidog-form-group">
+			<label><%:授权码有效期（天）：%></label>
 			<input type="number" id="new-expiry-days" value="30" min="1" max="3650" style="width:100px;">
 		</div>
 		<button type="button" class="wifidog-btn wifidog-btn-primary" style="padding:8px 20px;font-size:14px;" onclick="generateCode()">
@@ -193,7 +208,8 @@ document.addEventListener('DOMContentLoaded', loadCodes);
 			<tr>
 				<th width="15%"><%:授权码%></th>
 				<th width="15%"><%:已用/总计%></th>
-				<th width="12%"><%:有效期%></th>
+				<th width="14%"><%:授权时长%></th>
+				<th width="12%"><%:授权码有效期%></th>
 				<th width="15%"><%:创建日期%></th>
 				<th width="10%"><%:状态%></th>
 				<th width="15%"><%:操作%></th>

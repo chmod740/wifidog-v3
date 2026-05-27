@@ -121,8 +121,16 @@ set wifidog_v3.auth_VIP2026.code=VIP2026
 set wifidog_v3.auth_VIP2026.max_uses=20
 set wifidog_v3.auth_VIP2026.used_count=0
 set wifidog_v3.auth_VIP2026.expiry_days=30
+set wifidog_v3.auth_VIP2026.auth_minutes=5
 set wifidog_v3.auth_VIP2026.created_date=2026-05-18
 set wifidog_v3.auth_VIP2026.enabled=1
+set wifidog_v3.auth_DEFAULT=authcode
+set wifidog_v3.auth_DEFAULT.code=DEFAULT1440
+set wifidog_v3.auth_DEFAULT.max_uses=20
+set wifidog_v3.auth_DEFAULT.used_count=0
+set wifidog_v3.auth_DEFAULT.expiry_days=30
+set wifidog_v3.auth_DEFAULT.created_date=2026-05-18
+set wifidog_v3.auth_DEFAULT.enabled=1
 set wifidog_v3.auth_ONCE=authcode
 set wifidog_v3.auth_ONCE.code=ONCE123
 set wifidog_v3.auth_ONCE.max_uses=1
@@ -222,6 +230,7 @@ c.action_scan_devices()
 
     auth_view = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/view/wifidog_v3/auth_codes.htm").read_text()
     ok("Auth code page generate button is non-submit", 'type="button" class="wifidog-btn wifidog-btn-primary"' in auth_view)
+    ok("Auth code page exposes per-code duration input", "new-auth-minutes" in auth_view and "auth_minutes" in auth_view and "授权后有效时长" in auth_view)
     devices_view = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/view/wifidog_v3/devices.htm").read_text()
     ok("Device page avoids inline onclick row handlers", 'onclick="addWhitelist' not in devices_view and "addEventListener('click'" in devices_view)
     ok("Authorized list guards empty/non-array responses", "Array.isArray(data.devices)" in devices_view)
@@ -366,7 +375,7 @@ c.action_remove_device()
     ui_code = "UIADD" + str(int(time.time()))[-6:]
     gen = router_lua(f'''
 local http = require "luci.http"
-local values = {{ code = "{ui_code}", max_uses = "2", expiry_days = "7" }}
+    local values = {{ code = "{ui_code}", max_uses = "2", expiry_days = "7", auth_minutes = "11" }}
 function http.formvalue(k) return values[k] end
 function http.prepare_content(_) end
 function http.write_json(t)
@@ -376,13 +385,19 @@ local c = require "luci.controller.wifidog_v3"
 c.action_generate_code()
 ''')
     generated = dsh(ROUTER, f"uci show wifidog_v3 | grep -q \"code='{ui_code}'\"").returncode == 0
-    ok("Admin auth code generation endpoint", gen.returncode == 0 and "success:" in gen.stdout and generated, gen.stdout + gen.stderr)
+    generated_duration = dsh(ROUTER, "uci show wifidog_v3 | grep -q \"auth_minutes='11'\"").returncode == 0
+    ok("Admin auth code generation endpoint stores per-code duration", gen.returncode == 0 and "success:" in gen.stdout and generated and generated_duration, gen.stdout + gen.stderr)
 
     auth = client_post(PORTAL_URL, "action=auth&auth_code=VIP2026&redirect_url=http://10.89.0.10/")
     ok("Auth code accepted", '"success":true' in auth.stdout and '"wait_seconds":3' in auth.stdout and '"redirect":"http://10.89.0.10/"' in auth.stdout, auth.stdout)
     time.sleep(0.5)
     code_source = dsh(ROUTER, f"uci -q get wifidog_v3.{mac.replace(':', '_').lower()}.auth_source").stdout.strip()
     ok("Self-service auth source recorded", code_source == "code", code_source)
+    auth_remaining_seconds = dsh(ROUTER, f"expr $(uci -q get wifidog_v3.{mac.replace(':', '_').lower()}.auth_expiry) - $(date +%s)").stdout.strip()
+    ok("Self-service auth applies per-code duration", auth_remaining_seconds.isdigit() and 240 <= int(auth_remaining_seconds) <= 360, auth_remaining_seconds)
+    default_auth = client_post(PORTAL_URL, "action=auth&auth_code=DEFAULT1440&redirect_url=http://10.89.0.10/")
+    default_remaining_seconds = dsh(ROUTER, f"expr $(uci -q get wifidog_v3.{mac.replace(':', '_').lower()}.auth_expiry) - $(date +%s)").stdout.strip()
+    ok("Auth code without duration falls back to default auth timeout", '"success":true' in default_auth.stdout and default_remaining_seconds.isdigit() and 86000 <= int(default_remaining_seconds) <= 86500, default_auth.stdout + default_remaining_seconds)
     ip_session = dexec(ROUTER, "cat", "/tmp/wifidog_v3_ip_sessions")
     ok("Self-service auth records short IP session for iOS re-probe", ip_session.returncode == 0 and f"10.88.0.10 {mac}" in ip_session.stdout, ip_session.stdout + ip_session.stderr)
     fallback_api = dsh(ROUTER, f"now=$(date +%s); printf '%s 10.88.0.250 {mac}\\n' \"$((now + 600))\" >> /tmp/wifidog_v3_ip_sessions; REQUEST_METHOD=GET REQUEST_URI=/captive-portal/api REMOTE_ADDR=10.88.0.250 /www/wifidog_v3/cgi-bin/wifidog_v3/portal")
@@ -489,6 +504,7 @@ c.action_update_note()
                 "max_uses": "3",
                 "used_count": "1",
                 "expiry_days": "30",
+                "auth_minutes": "60",
                 "created_date": "2026-05-18",
                 "enabled": "1",
             }
@@ -503,8 +519,8 @@ function http.write_json(t) if t.success then print("success:" .. (t.message or 
 local c = require "luci.controller.wifidog_v3"
 c.action_import_config()
 ''')
-    imported = dsh(ROUTER, "uci -q get wifidog_v3.aa_bb_cc_dd_ee_01.type; uci -q get wifidog_v3.aa_bb_cc_dd_ee_01.note; uci -q get wifidog_v3.aa_bb_cc_dd_ee_02.type; uci -q get wifidog_v3.aa_bb_cc_dd_ee_02.note; uci -q get wifidog_v3.settings.portal_title; uci -q get wifidog_v3.settings.portal_theme; uci show wifidog_v3 | grep -q \"code='BACKUP123'\" && echo CODE_OK").stdout
-    ok("Import config restores lists, notes, auth codes and portal settings", "success:" in import_config.stdout and "whitelist" in imported and "备份白名单" in imported and "blacklist" in imported and "备份黑名单" in imported and "备份认证页" in imported and "dark" in imported and "CODE_OK" in imported, import_config.stdout + import_config.stderr + imported)
+    imported = dsh(ROUTER, "uci -q get wifidog_v3.aa_bb_cc_dd_ee_01.type; uci -q get wifidog_v3.aa_bb_cc_dd_ee_01.note; uci -q get wifidog_v3.aa_bb_cc_dd_ee_02.type; uci -q get wifidog_v3.aa_bb_cc_dd_ee_02.note; uci -q get wifidog_v3.settings.portal_title; uci -q get wifidog_v3.settings.portal_theme; uci show wifidog_v3 | grep -q \"code='BACKUP123'\" && echo CODE_OK; uci show wifidog_v3 | grep -q \"auth_minutes='60'\" && echo AUTH_MINUTES_OK").stdout
+    ok("Import config restores lists, notes, auth codes, per-code duration and portal settings", "success:" in import_config.stdout and "whitelist" in imported and "备份白名单" in imported and "blacklist" in imported and "备份黑名单" in imported and "备份认证页" in imported and "dark" in imported and "CODE_OK" in imported and "AUTH_MINUTES_OK" in imported, import_config.stdout + import_config.stderr + imported)
 
     dexec(ROUTER, "uci", "set", "wifidog_v3.settings.enabled=1")
     dexec(ROUTER, "uci", "commit", "wifidog_v3")

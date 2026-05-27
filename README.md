@@ -15,7 +15,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 - 白名单：设备访问内外网不受限制。
 - 黑名单：设备可访问内网资源，禁止访问公网资源，Portal 页面仅提示被拉黑，不能自助授权。
 - 手动授权：管理后台可授权设备默认 24 小时访问权限。
-- 授权码：支持自定义授权码、可用次数、有效期、启用/停用和自助认证。
+- 授权码：支持自定义授权码、可用次数、授权码有效期、单独授权时长、启用/停用和自助认证。
 - Captive Portal 兼容：
   - RFC 8908 Captive Portal API
   - RFC 8910 DHCP option 114
@@ -115,6 +115,7 @@ apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.0-r1.apk
 - `portal_port`：Portal 服务端口，默认 `8080`
 - `lan_subnet`：内网网段
 - `auth_timeout`：授权时长，单位分钟，默认 `1440`
+- `authcode.*.auth_minutes`：单个授权码使用后的授权时长，单位分钟；为空时使用 `auth_timeout`
 - `portal_theme`：Portal 页面主题
 - `portal_title`：Portal 页面标题
 - `portal_prompt`：Portal 主提示词

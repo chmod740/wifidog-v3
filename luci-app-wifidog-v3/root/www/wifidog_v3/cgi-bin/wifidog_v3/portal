@@ -51,6 +51,32 @@ local function get_portal_port()
 	return uci_get("wifidog_v3.settings.portal_port", "8080")
 end
 
+local function normalize_auth_minutes(value)
+	value = trim(value or "")
+	if value == "" then
+		return nil
+	end
+	if not value:match("^%d+$") then
+		return nil
+	end
+	local minutes = tonumber(value)
+	if not minutes or minutes < 1 or minutes > 525600 then
+		return nil
+	end
+	return math.floor(minutes)
+end
+
+local function effective_auth_timeout(auth_minutes)
+	local timeout = normalize_auth_minutes(auth_minutes)
+	if not timeout then
+		timeout = tonumber(uci_get("wifidog_v3.settings.auth_timeout", "1440")) or 1440
+	end
+	if timeout < 1 then
+		timeout = 1440
+	end
+	return math.floor(timeout)
+end
+
 local function portal_base_url()
 	local router_ip = get_router_ip()
 	local portal_port = get_portal_port()
@@ -370,7 +396,7 @@ local function validate_auth_code(code)
 
 	uci_set("wifidog_v3." .. found_name .. ".used_count=" .. tostring(used_count + 1))
 	uci_commit()
-	return true, "认证成功", code
+	return true, "认证成功", code, found.auth_minutes or ""
 end
 
 local function delete_devices_by_mac(mac)
@@ -382,12 +408,12 @@ local function delete_devices_by_mac(mac)
 	end
 end
 
-local function authorize_client(mac, ip, source, auth_code)
+local function authorize_client(mac, ip, source, auth_code, auth_minutes)
 	if not mac or mac == "" then
 		return false
 	end
 
-	local timeout = tonumber(uci_get("wifidog_v3.settings.auth_timeout", "1440")) or 1440
+	local timeout = effective_auth_timeout(auth_minutes)
 	local now = os.time()
 	local expiry = now + timeout * 60
 	local section = mac_to_section(mac)
@@ -844,13 +870,13 @@ local function handle()
 	if method == "POST" then
 		local form = parse_form(read_body())
 		if form.action == "auth" and form.auth_code and form.auth_code ~= "" then
-			local ok, message, used_code = validate_auth_code(form.auth_code)
+			local ok, message, used_code, auth_minutes = validate_auth_code(form.auth_code)
 			if ok then
 				if client_mac == "" then
 					json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
 					return
 				end
-				authorize_client(client_mac, client_ip, "code", used_code)
+				authorize_client(client_mac, client_ip, "code", used_code, auth_minutes)
 				json_response('{"success":true,"message":"认证成功","wait_seconds":3,"api_url":"/captive-portal/api","completion_url":"http://captive.apple.com/hotspot-detect.html","redirect":"' .. json_escape(form.redirect_url or "") .. '"}')
 				return
 			end

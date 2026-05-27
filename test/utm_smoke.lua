@@ -145,6 +145,7 @@ local backup_json = [[{
 			"max_uses": "5",
 			"used_count": "1",
 			"expiry_days": "30",
+			"auth_minutes": "45",
 			"created_date": "2026-05-22",
 			"enabled": "1"
 		}
@@ -155,6 +156,7 @@ run_action({ config_json = backup_json }, controller.action_import_config)
 local import_sec = section("AA:BB:CC:DD:EE:32")
 expect("import restores whitelist note", uci_get("wifidog_v3." .. import_sec .. ".type") == "whitelist" and uci_get("wifidog_v3." .. import_sec .. ".note") == "UTM-BACKUP-NOTE")
 expect("import restores auth code", read_cmd("uci show wifidog_v3 | grep -c \"code='UTMBACKUP'\"") ~= "0")
+expect("import restores auth code duration", read_cmd("uci show wifidog_v3 | grep -c \"auth_minutes='45'\"") ~= "0")
 
 local fp = io.open("/www/wifidog_v3/cgi-bin/wifidog_v3/portal", "r")
 local portal = fp and fp:read("*a") or ""
@@ -163,6 +165,7 @@ expect("portal success polls api then uses ios close fallback", portal:find("pol
 expect("portal has short ip session fallback", portal:find("IP_SESSION_FILE", 1, true) ~= nil and portal:find("resolve_client_device", 1, true) ~= nil)
 expect("portal implements captive api and legacy probes", portal:find("application/captive+json", 1, true) ~= nil and portal:find("generate_204", 1, true) ~= nil and portal:find("Microsoft NCSI", 1, true) ~= nil)
 expect("portal supports configurable themes and copy", portal:find("portal_theme_css", 1, true) ~= nil and portal:find("portal_prompt", 1, true) ~= nil and portal:find("portal_button_text", 1, true) ~= nil)
+expect("portal supports per-code auth duration", portal:find("effective_auth_timeout", 1, true) ~= nil and portal:find("auth_minutes", 1, true) ~= nil)
 
 os.execute("uci -q set wifidog_v3.settings.portal_theme=warm")
 os.execute("uci -q set wifidog_v3.settings.portal_title='UTM访客网络'")

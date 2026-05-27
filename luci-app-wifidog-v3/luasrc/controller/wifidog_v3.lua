@@ -290,6 +290,21 @@ local function uci_cli_commit(config)
 	return sys.call("uci -q commit " .. shell_quote(config) .. " >/dev/null 2>&1") == 0
 end
 
+local function normalize_auth_minutes(value)
+	value = tostring(value or ""):match("^%s*(.-)%s*$")
+	if value == "" then
+		return "", nil
+	end
+	if not value:match("^%d+$") then
+		return nil, "授权后有效时长必须是正整数分钟"
+	end
+	local minutes = tonumber(value)
+	if not minutes or minutes < 1 or minutes > 525600 then
+		return nil, "授权后有效时长必须在 1 到 525600 分钟之间"
+	end
+	return tostring(minutes), nil
+end
+
 local function auth_code_exists(code)
 	local target = tostring(code or ""):upper()
 	local out = sys.exec("uci -q show wifidog_v3 2>/dev/null") or ""
@@ -619,13 +634,18 @@ local function normalize_backup_payload(payload)
 		if not value or value == "" then
 			return nil, "授权码不能为空"
 		end
+		local auth_minutes, auth_minutes_err = normalize_auth_minutes(clean_import_value(code.auth_minutes, 16) or "")
+		if not auth_minutes then
+			return nil, "授权码 " .. value:upper() .. " 的" .. (auth_minutes_err or "授权后有效时长无效")
+		end
 		normalized.auth_codes[#normalized.auth_codes + 1] = {
 			code = value:upper(),
 			max_uses = clean_import_value(code.max_uses, 16) or "1",
 			used_count = clean_import_value(code.used_count, 16) or "0",
 			expiry_days = clean_import_value(code.expiry_days, 16) or "30",
 			created_date = clean_import_value(code.created_date, 16) or os.date("%Y-%m-%d"),
-			enabled = clean_import_value(code.enabled, 8) or "1"
+			enabled = clean_import_value(code.enabled, 8) or "1",
+			auth_minutes = auth_minutes
 		}
 	end
 
@@ -643,24 +663,32 @@ end
 
 local function restore_backup_payload(payload)
 	local ok, err = pcall(function()
-		local uci = get_uci()
+		local function must(result, message)
+			if not result then
+				error(message or "uci operation failed")
+			end
+		end
 		local function set_nonempty(section, option, value)
 			value = tostring(value or "")
 			if value ~= "" then
-				uci:set("wifidog_v3", section, option, value)
+				must(uci_cli_set("wifidog_v3." .. section .. "." .. option .. "=" .. value), "failed to set " .. section .. "." .. option)
+			end
+		end
+		local function set_required(section, option, value)
+			must(uci_cli_set("wifidog_v3." .. section .. "." .. option .. "=" .. tostring(value or "")), "failed to set " .. section .. "." .. option)
+		end
+		local function create_section(section, stype)
+			must(uci_cli_set("wifidog_v3." .. section .. "=" .. stype), "failed to create section " .. section)
+		end
+
+		sys.call("uci -q revert wifidog_v3 >/dev/null 2>&1")
+		for section, s in pairs(uci_sections_cli()) do
+			if s[".name"] == "settings" or s[".type"] == "device" or s[".type"] == "authcode" then
+				uci_cli_delete("wifidog_v3." .. section)
 			end
 		end
 
-		uci:revert("wifidog_v3")
-		uci:foreach("wifidog_v3", "device", function(s)
-			uci:delete("wifidog_v3", s[".name"])
-		end)
-		uci:foreach("wifidog_v3", "authcode", function(s)
-			uci:delete("wifidog_v3", s[".name"])
-		end)
-
-		uci:delete("wifidog_v3", "settings")
-		uci:section("wifidog_v3", "wifidog_v3", "settings")
+		create_section("settings", "wifidog_v3")
 		for _, key in ipairs(settings_keys) do
 			if payload.settings[key] ~= nil then
 				set_nonempty("settings", key, payload.settings[key])
@@ -669,13 +697,13 @@ local function restore_backup_payload(payload)
 
 		for _, dev in ipairs(payload.devices) do
 			local section = mac_to_section(dev.mac)
-			uci:section("wifidog_v3", "device", section)
-			uci:set("wifidog_v3", section, "mac", dev.mac)
+			create_section(section, "device")
+			set_required(section, "mac", dev.mac)
 			set_nonempty(section, "ip", dev.ip)
 			set_nonempty(section, "hostname", dev.hostname)
 			set_nonempty(section, "note", dev.note)
-			uci:set("wifidog_v3", section, "type", dev.type)
-			uci:set("wifidog_v3", section, "auth_expiry", dev.auth_expiry)
+			set_required(section, "type", dev.type)
+			set_required(section, "auth_expiry", dev.auth_expiry)
 			set_nonempty(section, "auth_source", dev.auth_source)
 			set_nonempty(section, "auth_code", dev.auth_code)
 			set_nonempty(section, "created", dev.created)
@@ -684,16 +712,17 @@ local function restore_backup_payload(payload)
 		for idx, code in ipairs(payload.auth_codes) do
 			local safe_code = code.code:gsub("[^%w_]", "_"):sub(1, 32)
 			local section = string.format("auth_%s_%02d", safe_code, idx)
-			uci:section("wifidog_v3", "authcode", section)
-			uci:set("wifidog_v3", section, "code", code.code)
-			uci:set("wifidog_v3", section, "max_uses", code.max_uses)
-			uci:set("wifidog_v3", section, "used_count", code.used_count)
-			uci:set("wifidog_v3", section, "expiry_days", code.expiry_days)
-			uci:set("wifidog_v3", section, "created_date", code.created_date)
-			uci:set("wifidog_v3", section, "enabled", code.enabled)
+			create_section(section, "authcode")
+			set_required(section, "code", code.code)
+			set_required(section, "max_uses", code.max_uses)
+			set_required(section, "used_count", code.used_count)
+			set_required(section, "expiry_days", code.expiry_days)
+			set_required(section, "created_date", code.created_date)
+			set_required(section, "enabled", code.enabled)
+			set_nonempty(section, "auth_minutes", code.auth_minutes)
 		end
 
-		if not uci:commit("wifidog_v3") then
+		if not uci_cli_commit("wifidog_v3") then
 			error("uci commit failed")
 		end
 	end)
@@ -705,7 +734,7 @@ local function restore_backup_payload(payload)
 
 	sys.call("logger -t wifidog_v3 " .. shell_quote("restore failed: " .. tostring(err)))
 	sys.call("uci -q revert wifidog_v3 >/dev/null 2>&1")
-	return false
+	return false, err
 end
 
 local function auth_remaining(auth_expiry)
@@ -1061,6 +1090,7 @@ function action_list_auth_codes()
 			max_uses = s.max_uses or "0",
 			used_count = s.used_count or "0",
 			expiry_days = s.expiry_days or "0",
+			auth_minutes = s.auth_minutes or "",
 			created_date = s.created_date or "",
 			enabled = s.enabled or "0"
 		}
@@ -1080,14 +1110,22 @@ function action_generate_code()
 	local code = http.formvalue("code")
 	local max_uses = http.formvalue("max_uses") or "1"
 	local expiry_days = http.formvalue("expiry_days") or "30"
+	local auth_minutes = http.formvalue("auth_minutes") or ""
 
 	code = code and code:match("^%s*(.-)%s*$") or ""
 	max_uses = tostring(tonumber(max_uses) or 1)
 	expiry_days = tostring(tonumber(expiry_days) or 30)
+	local auth_minutes_err
+	auth_minutes, auth_minutes_err = normalize_auth_minutes(auth_minutes)
 
 	if not code or code == "" then
 		http.prepare_content("application/json")
 		http.write_json({ success = false, message = "授权码不能为空" })
+		return
+	end
+	if not auth_minutes then
+		http.prepare_content("application/json")
+		http.write_json({ success = false, message = auth_minutes_err or "授权后有效时长无效" })
 		return
 	end
 
@@ -1110,6 +1148,7 @@ function action_generate_code()
 		and uci_cli_set("wifidog_v3." .. section .. ".max_uses=" .. max_uses)
 		and uci_cli_set("wifidog_v3." .. section .. ".used_count=0")
 		and uci_cli_set("wifidog_v3." .. section .. ".expiry_days=" .. expiry_days)
+		and uci_cli_set_nonempty("wifidog_v3." .. section .. ".auth_minutes", auth_minutes)
 		and uci_cli_set("wifidog_v3." .. section .. ".created_date=" .. os.date("%Y-%m-%d"))
 		and uci_cli_set("wifidog_v3." .. section .. ".enabled=1")
 	local committed = ok and uci_cli_commit("wifidog_v3")
@@ -1183,7 +1222,8 @@ function action_import_config()
 		return
 	end
 
-	if restore_backup_payload(normalized) then
+	local restored, restore_err = restore_backup_payload(normalized)
+	if restored then
 		http.write_json({
 			success = true,
 			message = string.format(
@@ -1193,7 +1233,11 @@ function action_import_config()
 			)
 		})
 	else
-		http.write_json({ success = false, message = "配置恢复失败，已回滚未提交的修改" })
+		local message = "配置恢复失败，已回滚未提交的修改"
+		if restore_err and tostring(restore_err) ~= "" then
+			message = message .. "：" .. tostring(restore_err)
+		end
+		http.write_json({ success = false, message = message })
 	end
 end
 
@@ -1240,10 +1284,10 @@ function action_portal()
 
 	if action == "auth" and auth_code ~= "" then
 		-- Validate auth code
-		local valid, message = validate_auth_code(auth_code, client_mac)
+		local valid, message, used_code, auth_minutes = validate_auth_code(auth_code, client_mac)
 		if valid then
 			-- Authorize the device
-			authorize_client(client_mac, client_ip)
+			authorize_client(client_mac, client_ip, used_code, auth_minutes)
 			reload_firewall()
 
 			http.prepare_content("text/html; charset=utf-8")
@@ -1434,16 +1478,21 @@ function validate_auth_code(code, client_mac)
 	uci:set("wifidog_v3", found[".name"], "used_count", tostring(used_count + 1))
 	uci:commit("wifidog_v3")
 
-	return true, "ok"
+	return true, "ok", code, found.auth_minutes or ""
 end
 
-function authorize_client(mac, ip)
+function authorize_client(mac, ip, auth_code, auth_minutes)
 	if not mac or mac == "" then
 		return
 	end
 
 	mac = mac:upper()
-	local auth_timeout = tonumber(sys.exec("uci -q get wifidog_v3.settings.auth_timeout 2>/dev/null") or "1440")
+	local normalized_auth_minutes = normalize_auth_minutes(auth_minutes)
+	local auth_timeout = tonumber(normalized_auth_minutes or "")
+	if not auth_timeout then
+		auth_timeout = tonumber(sys.exec("uci -q get wifidog_v3.settings.auth_timeout 2>/dev/null") or "1440")
+	end
+	auth_timeout = auth_timeout or 1440
 	local expiry = os.time() + (auth_timeout * 60)
 
 	local uci = get_uci()
@@ -1458,7 +1507,7 @@ function authorize_client(mac, ip)
 		type = "authorized",
 		auth_expiry = tostring(expiry),
 		auth_source = "code",
-		auth_code = "",
+		auth_code = auth_code or "",
 		created = tostring(os.time())
 	})
 	uci:commit("wifidog_v3")

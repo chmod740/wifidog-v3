@@ -16,7 +16,7 @@ WiFiDog V3 is a LuCI network authentication system for OpenWrt. It manages pendi
 - Whitelist mode: unrestricted LAN and WAN access.
 - Blacklist mode: LAN access allowed, public Internet blocked, self-service authorization disabled.
 - Manual authorization from LuCI with a default 24-hour validity period.
-- Authorization codes with custom code values, usage limits, expiration, enable/disable state, and self-service login.
+- Authorization codes with custom code values, usage limits, code expiration, per-code authorization lifetime, enable/disable state, and self-service login.
 - Captive Portal compatibility:
   - RFC 8908 Captive Portal API
   - RFC 8910 DHCP option 114
@@ -116,6 +116,7 @@ Common options:
 - `portal_port`: portal port, default `8080`
 - `lan_subnet`: LAN subnet
 - `auth_timeout`: authorization lifetime in minutes, default `1440`
+- `authcode.*.auth_minutes`: per-code authorization lifetime in minutes; empty values fall back to `auth_timeout`
 - `portal_theme`: portal theme
 - `portal_title`: portal page title
 - `portal_prompt`: main portal prompt

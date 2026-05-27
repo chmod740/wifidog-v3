@@ -29,5 +29,6 @@ config wifidog_v3 'settings'
 #	option max_uses '1'
 #	option used_count '0'
 #	option expiry_days '30'
+#	option auth_minutes ''  # empty means use settings.auth_timeout
 #	option created_date '2024-01-01'
 #	option enabled '1'

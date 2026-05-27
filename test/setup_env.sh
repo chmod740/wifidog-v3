@@ -285,6 +285,7 @@ config authcode 'auth_VIP2024'
 	option max_uses '10'
 	option used_count '0'
 	option expiry_days '30'
+	option auth_minutes '5'
 	option created_date '2026-01-01'
 	option enabled '1'
 
