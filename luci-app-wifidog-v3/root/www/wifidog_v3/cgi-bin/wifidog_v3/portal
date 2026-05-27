@@ -13,6 +13,21 @@ local function run(cmd)
 	os.execute(cmd .. " >/dev/null 2>&1")
 end
 
+local LOG_FILE = "/var/log/wifidog_v3.log"
+
+local function append_runtime_log(message)
+	message = tostring(message or ""):gsub("[\r\n]", " "):sub(1, 512)
+	if message == "" then
+		return
+	end
+	local fp = io.open(LOG_FILE, "a")
+	if fp then
+		fp:write(os.date("%Y-%m-%d %H:%M:%S"), " [portal] ", message, "\n")
+		fp:close()
+	end
+	run("logger -t wifidog_v3 " .. shell_quote(message))
+end
+
 local function read_cmd(cmd)
 	local fp = io.popen(cmd .. " 2>/dev/null")
 	if not fp then
@@ -726,6 +741,7 @@ local function authorize_client(mac, ip, source, auth_code, auth_minutes, auth_s
 	uci_set("wifidog_v3." .. section .. ".created=" .. tostring(now))
 	uci_commit()
 	remember_ip_session(ip, mac, expiry)
+	append_runtime_log("自助认证成功 MAC=" .. mac:upper() .. " IP=" .. tostring(ip or "") .. " 方式=" .. auth_source .. " 有效秒数=" .. tostring(timeout))
 	reload_firewall()
 	return true
 end
@@ -1242,6 +1258,7 @@ local function handle()
 
 	if device and device.type == "blacklist" then
 		if method == "POST" then
+			append_runtime_log("黑名单设备尝试自助认证 MAC=" .. tostring(client_mac or "") .. " IP=" .. tostring(client_ip or ""))
 			json_response('{"success":false,"message":"当前设备已被拉黑，无法自助授权"}')
 		else
 			response("200 OK", "text/html; charset=utf-8", blocked_html())
@@ -1268,45 +1285,52 @@ local function handle()
 				end
 			end
 
-			if auth_method == "radius" then
-				if not radius_enabled then
-					json_response('{"success":false,"message":"RADIUS认证未启用"}')
+				if auth_method == "radius" then
+					if not radius_enabled then
+						append_runtime_log("RADIUS认证失败：功能未启用 IP=" .. tostring(client_ip or ""))
+						json_response('{"success":false,"message":"RADIUS认证未启用"}')
+						return
+					end
+					local ok, message, radius_user, session_timeout = radius_authenticate(form.radius_username, form.radius_password, client_mac, client_ip)
+					if ok then
+						if client_mac == "" then
+							append_runtime_log("RADIUS认证失败：无法识别客户端MAC IP=" .. tostring(client_ip or ""))
+							json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
+							return
+						end
+						authorize_client(client_mac, client_ip, "radius", radius_user, "", session_timeout)
+						json_response('{"success":true,"message":"认证成功","wait_seconds":3,"api_url":"/captive-portal/api","completion_url":"http://captive.apple.com/hotspot-detect.html","redirect":"' .. json_escape(form.redirect_url or "") .. '"}')
+						return
+					end
+					append_runtime_log("RADIUS认证失败 MAC=" .. tostring(client_mac or "") .. " IP=" .. tostring(client_ip or "") .. " 用户=" .. clean_text(form.radius_username or "", 128) .. " 原因=" .. tostring(message or ""))
+					json_response('{"success":false,"message":"' .. json_escape(message) .. '"}')
 					return
 				end
-				local ok, message, radius_user, session_timeout = radius_authenticate(form.radius_username, form.radius_password, client_mac, client_ip)
+
+				if not code_enabled then
+					append_runtime_log("授权码认证失败：功能未启用 IP=" .. tostring(client_ip or ""))
+					json_response('{"success":false,"message":"授权码认证未启用"}')
+					return
+				end
+				if not form.auth_code or form.auth_code == "" then
+					append_runtime_log("授权码认证失败：未输入授权码 IP=" .. tostring(client_ip or ""))
+					json_response('{"success":false,"message":"请输入授权码"}')
+					return
+				end
+				local ok, message, used_code, auth_minutes = validate_auth_code(form.auth_code)
 				if ok then
 					if client_mac == "" then
+						append_runtime_log("授权码认证失败：无法识别客户端MAC IP=" .. tostring(client_ip or ""))
 						json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
 						return
 					end
-					authorize_client(client_mac, client_ip, "radius", radius_user, "", session_timeout)
+					authorize_client(client_mac, client_ip, "code", used_code, auth_minutes)
 					json_response('{"success":true,"message":"认证成功","wait_seconds":3,"api_url":"/captive-portal/api","completion_url":"http://captive.apple.com/hotspot-detect.html","redirect":"' .. json_escape(form.redirect_url or "") .. '"}')
 					return
 				end
+				append_runtime_log("授权码认证失败 MAC=" .. tostring(client_mac or "") .. " IP=" .. tostring(client_ip or "") .. " 原因=" .. tostring(message or ""))
 				json_response('{"success":false,"message":"' .. json_escape(message) .. '"}')
 				return
-			end
-
-			if not code_enabled then
-				json_response('{"success":false,"message":"授权码认证未启用"}')
-				return
-			end
-			if not form.auth_code or form.auth_code == "" then
-				json_response('{"success":false,"message":"请输入授权码"}')
-				return
-			end
-			local ok, message, used_code, auth_minutes = validate_auth_code(form.auth_code)
-			if ok then
-				if client_mac == "" then
-					json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
-					return
-				end
-				authorize_client(client_mac, client_ip, "code", used_code, auth_minutes)
-				json_response('{"success":true,"message":"认证成功","wait_seconds":3,"api_url":"/captive-portal/api","completion_url":"http://captive.apple.com/hotspot-detect.html","redirect":"' .. json_escape(form.redirect_url or "") .. '"}')
-				return
-			end
-			json_response('{"success":false,"message":"' .. json_escape(message) .. '"}')
-			return
 		end
 		json_response('{"success":false,"message":"无效的请求"}')
 		return

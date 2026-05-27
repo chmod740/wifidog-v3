@@ -5,6 +5,7 @@ STOP=15
 
 NAME="wifidog_v3"
 NFT_TABLE="wifidog_v3"
+LOG_FILE="/var/log/wifidog_v3.log"
 PORTAL_ROOT="/www/wifidog_v3"
 PORTAL_CGI="/www/wifidog_v3/cgi-bin/wifidog_v3/portal"
 PORTAL_PID="/var/run/wifidog_v3_portal.pid"
@@ -14,7 +15,11 @@ ODHCPD_DHCP_SECTION="lan"
 EXTRA_COMMANDS="check_expiry_cron"
 EXTRA_HELP="	check_expiry_cron	Remove expired temporary authorizations"
 
-_log() { logger -t "$NAME" "$1"; }
+_log() {
+	logger -t "$NAME" "$1"
+	mkdir -p /var/log
+	printf '%s [service] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG_FILE" 2>/dev/null || true
+}
 
 is_auth_valid() {
 	local auth_expiry="$1"

@@ -24,6 +24,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
   - iOS、Android、Windows、NetworkManager 等旧探测路径
 - Portal 页面：使用独立 uhttpd 实例，支持主题切换和后台自定义提示词、标题、按钮文案。
 - 配置备份恢复：支持导入/导出系统设置、黑白名单、备注、授权码和 Portal 页面配置。
+- 运行日志：后台可查看本系统运行日志和相关 syslog，并支持清空本系统日志。
 - Passwall2 共存：使用更早优先级的 nftables 规则，尽量在分流规则前完成认证控制。
 - 安全卸载：卸载时清理 nftables、Portal 进程、DHCP/RA 广告、运行状态和配置文件。
 

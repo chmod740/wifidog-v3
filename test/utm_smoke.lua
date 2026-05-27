@@ -174,6 +174,9 @@ expect("portal supports configurable themes and copy", portal:find("portal_theme
 expect("portal supports per-code auth duration", portal:find("effective_auth_seconds", 1, true) ~= nil and portal:find("auth_minutes", 1, true) ~= nil)
 expect("portal supports radius auth", portal:find("radius_authenticate", 1, true) ~= nil and portal:find("session_timeout", 1, true) ~= nil and portal:find("auth_method", 1, true) ~= nil)
 
+local controller_file = read_cmd("cat /usr/lib/lua/luci/controller/wifidog_v3.lua")
+expect("controller exposes runtime logs api", controller_file:find("action_runtime_logs", 1, true) ~= nil and controller_file:find("action_clear_runtime_logs", 1, true) ~= nil and controller_file:find("/var/log/wifidog_v3.log", 1, true) ~= nil)
+
 os.execute("uci -q set wifidog_v3.settings.portal_theme=warm")
 os.execute("uci -q set wifidog_v3.settings.portal_title='UTM访客网络'")
 os.execute("uci -q set wifidog_v3.settings.portal_prompt='请输入UTM授权码'")

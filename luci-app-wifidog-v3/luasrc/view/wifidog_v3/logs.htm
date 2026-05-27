@@ -1,0 +1,160 @@
+<%
+local csrf_token = select(2, pcall(function() return luci.dispatcher.context.requesttoken end)) or select(2, pcall(function() return luci.dispatcher.context.token end)) or ''
+local script = [[
+<style>
+.wifidog-log-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+.wifidog-log-toolbar label { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.wifidog-log-toolbar select,
+.wifidog-log-toolbar input { min-height: 30px; }
+.wifidog-log-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 5px 12px; border: 1px solid #c7d0d9; border-radius: 4px; background: #f8fafc; color: #1f2937; cursor: pointer; }
+.wifidog-log-btn:hover { background: #eef2f7; }
+.wifidog-log-danger { border-color: #ef4444; color: #b91c1c; }
+.wifidog-log-meta { color: #6b7280; margin: 8px 0; }
+.wifidog-log-output { min-height: 420px; max-height: 68vh; overflow: auto; background: #111827; color: #e5e7eb; border-radius: 6px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.wifidog-log-empty { color: #9ca3af; }
+.wifidog-log-source { color: #93c5fd; margin-right: 8px; }
+.wifidog-log-error { color: #b91c1c; margin: 8px 0; }
+@media (max-width: 700px) {
+	.wifidog-log-toolbar { align-items: stretch; }
+	.wifidog-log-toolbar label,
+	.wifidog-log-toolbar select,
+	.wifidog-log-toolbar input,
+	.wifidog-log-toolbar button { width: 100%; }
+}
+</style>
+
+<div class="wifidog-log-toolbar">
+	<label>来源
+		<select id="log-source">
+			<option value="app" selected>本系统日志</option>
+			<option value="syslog">系统日志</option>
+			<option value="all">全部</option>
+		</select>
+	</label>
+	<label>行数
+		<select id="log-lines">
+			<option value="100">100</option>
+			<option value="200" selected>200</option>
+			<option value="500">500</option>
+			<option value="1000">1000</option>
+		</select>
+	</label>
+	<label>关键词
+		<input id="log-query" type="search" maxlength="80" placeholder="按关键词筛选">
+	</label>
+	<button id="refresh-logs" type="button" class="wifidog-log-btn">刷新</button>
+	<button id="toggle-auto" type="button" class="wifidog-log-btn">暂停自动刷新</button>
+	<button id="clear-logs" type="button" class="wifidog-log-btn wifidog-log-danger">清空本系统日志</button>
+</div>
+
+<div id="log-message" class="wifidog-log-meta">正在加载运行日志...</div>
+<div id="log-output" class="wifidog-log-output"><span class="wifidog-log-empty">正在加载...</span></div>
+
+<script>
+var runtimeLogsUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/runtime_logs") .. [[';
+var clearLogsUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/clear_runtime_logs") .. [[';
+var csrfToken = ']] .. csrf_token .. [[';
+var autoRefresh = true;
+var autoTimer = null;
+
+function logPostBody(extra) {
+	var params = new URLSearchParams(extra || {});
+	params.set('token', csrfToken);
+	return params.toString();
+}
+
+function escapeHtml(value) {
+	return String(value == null ? '' : value)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+function setMessage(text, isError) {
+	var el = document.getElementById('log-message');
+	if (!el) return;
+	el.className = isError ? 'wifidog-log-error' : 'wifidog-log-meta';
+	el.textContent = text;
+}
+
+function renderLogs(data) {
+	var output = document.getElementById('log-output');
+	if (!output) return;
+	var lines = Array.isArray(data.lines) ? data.lines : [];
+	if (!lines.length) {
+		output.innerHTML = '<span class="wifidog-log-empty">暂无匹配日志</span>';
+	} else {
+		output.innerHTML = lines.map(function(item) {
+			return '<div><span class="wifidog-log-source">[' + escapeHtml(item.source || 'log') + ']</span>' + escapeHtml(item.line || '') + '</div>';
+		}).join('');
+		output.scrollTop = output.scrollHeight;
+	}
+	var size = data.stat && data.stat.size ? data.stat.size : 0;
+	setMessage('已加载 ' + lines.length + ' 行，本系统日志大小 ' + size + ' 字节');
+}
+
+function loadLogs() {
+	var source = document.getElementById('log-source').value;
+	var lines = document.getElementById('log-lines').value;
+	var query = document.getElementById('log-query').value;
+	fetch(runtimeLogsUrl, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: logPostBody({ source: source, lines: lines, query: query })
+	})
+	.then(function(r) { return r.json(); })
+	.then(function(data) {
+		if (!data.success) throw new Error(data.message || '加载日志失败');
+		renderLogs(data);
+	})
+	.catch(function(err) {
+		setMessage(err.message || '加载日志失败', true);
+	});
+}
+
+function clearLogs() {
+	if (!confirm('确认清空本系统日志？系统 syslog 不会被清空。')) return;
+	fetch(clearLogsUrl, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: logPostBody({})
+	})
+	.then(function(r) { return r.json(); })
+	.then(function(data) {
+		if (!data.success) throw new Error(data.message || '清空日志失败');
+		loadLogs();
+	})
+	.catch(function(err) {
+		setMessage(err.message || '清空日志失败', true);
+	});
+}
+
+function resetTimer() {
+	if (autoTimer) window.clearInterval(autoTimer);
+	autoTimer = window.setInterval(function() {
+		if (autoRefresh) loadLogs();
+	}, 5000);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+	document.getElementById('refresh-logs').addEventListener('click', loadLogs);
+	document.getElementById('clear-logs').addEventListener('click', clearLogs);
+	document.getElementById('toggle-auto').addEventListener('click', function() {
+		autoRefresh = !autoRefresh;
+		this.textContent = autoRefresh ? '暂停自动刷新' : '继续自动刷新';
+	});
+	document.getElementById('log-source').addEventListener('change', loadLogs);
+	document.getElementById('log-lines').addEventListener('change', loadLogs);
+	document.getElementById('log-query').addEventListener('keydown', function(ev) {
+		if (ev.key === 'Enter') loadLogs();
+	});
+	loadLogs();
+	resetTimer();
+});
+</script>
+]]
+%>
+
+<% write(script) %>

@@ -297,8 +297,10 @@ c.action_scan_devices()
     ok("Auto refresh skips active or unsaved notes", "setInterval(autoRefresh, 15000)" in devices_view and "isEditingNote()" in devices_view and "hasUnsavedNote()" in devices_view)
     ok("Authorized devices can move to whitelist/blacklist", devices_view.count("addWhitelist(dev.mac") >= 2 and devices_view.count("addBlacklist(dev.mac") >= 2)
     backup_view = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/view/wifidog_v3/backup.htm").read_text()
+    logs_view = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/view/wifidog_v3/logs.htm").read_text()
     controller = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/controller/wifidog_v3.lua").read_text()
     ok("Backup page has import and export controls", "导出配置" in backup_view and "恢复配置" in backup_view and "export_config" in controller and "import_config" in controller)
+    ok("Runtime logs page has log viewer controls", "运行日志" in controller and "runtime_logs" in controller and "clear_runtime_logs" in controller and "清空本系统日志" in logs_view and "暂停自动刷新" in logs_view)
     settings_model = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/model/cbi/wifidog_v3/settings.lua").read_text()
     ok("Settings page exposes portal theme and prompt controls", "Portal页面" in settings_model and "portal_theme" in settings_model and "portal_prompt" in settings_model and "portal_hint" in settings_model)
     ok("Backup includes portal page customization settings", "portal_theme" in controller and "portal_prompt" in controller and "portal_button_text" in controller)
@@ -313,6 +315,7 @@ c.action_scan_devices()
     ok("Portal keeps short IP session cache for captive re-probes", "IP_SESSION_FILE" in portal_cgi and "remember_ip_session" in portal_cgi and "resolve_client_device" in portal_cgi)
     ok("Portal implements RFC8908 API and legacy probe success", "application/captive+json" in portal_cgi and "captive_api_json" in portal_cgi and "generate_204" in portal_cgi and "Microsoft NCSI" in portal_cgi)
     ok("Init advertises RFC8910 DHCP/RA options and cleans them", "dhcp-option=114" in init_script and "captive_portal_uri" in init_script and "cleanup_captive_portal_advertisement" in init_script)
+    ok("Runtime events are written to app log", "LOG_FILE=\"/var/log/wifidog_v3.log\"" in init_script and "append_runtime_log" in controller and "append_runtime_log" in portal_cgi)
     empty_authorized = router_lua('''
 local http = require "luci.http"
 function http.prepare_content(_) end
@@ -321,6 +324,26 @@ local c = require "luci.controller.wifidog_v3"
 c.action_list_authorized()
 ''')
     ok("Authorized empty list returns JSON array", '"devices":[]' in empty_authorized.stdout, empty_authorized.stdout + empty_authorized.stderr)
+    runtime_logs = router_lua('''
+local http = require "luci.http"
+local jsonc = require "luci.jsonc"
+function http.formvalue(k) if k == "lines" then return "50" elseif k == "source" then return "app" end end
+function http.prepare_content(_) end
+function http.write_json(t) print(jsonc.stringify(t)) end
+os.execute("mkdir -p /var/log && printf '%s\\n' '2026-05-27 10:00:00 [test] Docker runtime log line' >> /var/log/wifidog_v3.log")
+local c = require "luci.controller.wifidog_v3"
+c.action_runtime_logs()
+''')
+    ok("Runtime logs endpoint returns app log lines", '"success":true' in runtime_logs.stdout and "Docker runtime log line" in runtime_logs.stdout, runtime_logs.stdout + runtime_logs.stderr)
+    clear_logs = router_lua('''
+local http = require "luci.http"
+function http.formvalue(_) return nil end
+function http.prepare_content(_) end
+function http.write_json(t) if t.success then print("success:" .. (t.message or "")) else print("fail:" .. (t.message or "")) end end
+local c = require "luci.controller.wifidog_v3"
+c.action_clear_runtime_logs()
+''')
+    ok("Runtime logs can clear app log safely", "success:" in clear_logs.stdout and "运行日志已清空" in clear_logs.stdout and "运行日志已由管理后台清空" in dsh(ROUTER, "cat /var/log/wifidog_v3.log").stdout, clear_logs.stdout + clear_logs.stderr)
     pending_note = router_lua('''
 local http = require "luci.http"
 local values = { mac = "DE:AD:BE:EF:67:68", ip = "10.88.0.66", hostname = "lease-only-phone", note = "门口手机" }

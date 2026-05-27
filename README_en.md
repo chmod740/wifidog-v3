@@ -25,6 +25,7 @@ WiFiDog V3 is a LuCI network authentication system for OpenWrt. It manages pendi
   - Legacy probes used by iOS, Android, Windows, and NetworkManager
 - Portal UI served by a dedicated uhttpd instance, with selectable themes and editable copy.
 - Backup and restore for settings, lists, notes, authorization codes, and portal UI settings.
+- Runtime log viewer for app logs and related syslog entries, with safe app-log clearing.
 - Passwall2 coexistence using early-priority nftables rules to enforce authorization before traffic splitting where possible.
 - Safe uninstall cleanup for nftables, portal processes, DHCP/RA advertisements, runtime state, and config files.
 
