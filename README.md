@@ -75,6 +75,12 @@ dist/openwrt25/luci-app-wifidog-v3-1.0.0-r1.apk
 
 ## 安装
 
+最新发布包：
+
+- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.0>
+- IPK：`luci-app-wifidog-v3_1.0.0-1_all.ipk`
+- APK：`luci-app-wifidog-v3-1.0.0-r1.apk`
+
 OpenWrt 23/24：
 
 ```sh
@@ -152,13 +158,20 @@ lua /tmp/utm_smoke.lua
 
 最近回归结果：
 
-- Docker OpenWrt 23.05.6：`90 passed, 0 failed`
-- Docker OpenWrt 24.10.6：`90 passed, 0 failed`
-- Docker OpenWrt 25.12.3：`90 passed, 0 failed`
-- UTM OpenWrt 23.05.6：`UTM_SMOKE_OK`
-- UTM OpenWrt 24.10.6：`UTM_SMOKE_OK`
-- UTM OpenWrt 25.12.3：`UTM_SMOKE_OK`
-- UTM OpenWrt 25 卸载检查：`PKG_REMOVED`、`PROC_CLEAN`、`CONFIG_CLEAN`、`NFT_CLEAN`
+- Docker OpenWrt 23.05.6：`100 passed, 0 failed`
+- UTM OpenWrt 23.05.6：安装、Portal、授权码、RADIUS、Passwall2 共存、关闭、卸载清理通过
+- UTM OpenWrt 24.10.6：安装、Portal、授权码、RADIUS PAP、`Session-Timeout`、运行日志、关闭、卸载清理通过
+- UTM OpenWrt 25.12.3：APK 安装、Portal、授权码、RADIUS PAP、`Session-Timeout`、运行日志、关闭、卸载清理通过
+
+UTM 24/25 卸载检查确认以下项目无残留：
+
+- 软件包记录
+- Portal uhttpd 进程
+- `/www/wifidog_v3`
+- `/www/cgi-bin/wifidog_v3`
+- `/etc/config/wifidog_v3`
+- `/var/run/wifidog_v3_portal.pid`
+- `inet wifidog_v3` nftables 表
 
 ## 卸载
 
