@@ -12,6 +12,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 
 - 网络设备扫描：从 ARP 表和 DHCP leases 中识别内网设备。
 - 设备名单管理：待授权、白名单、黑名单、已授权设备均支持备注，备注按 MAC 地址保留。
+- 设备识别：访问 Portal 时记录 User-Agent，解析设备类型、系统、浏览器和可识别的设备型号，并随 MAC 地址保留。
 - 白名单：设备访问内外网不受限制。
 - 黑名单：设备可访问内网资源，禁止访问公网资源，Portal 页面仅提示被拉黑，不能自助授权。
 - 手动授权：管理后台可授权设备默认 24 小时访问权限。
@@ -58,7 +59,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 输出：
 
 ```text
-dist/luci-app-wifidog-v3_1.0.0-1_all.ipk
+dist/luci-app-wifidog-v3_1.0.1-1_all.ipk
 ```
 
 构建 OpenWrt 25 APK：
@@ -70,28 +71,28 @@ dist/luci-app-wifidog-v3_1.0.0-1_all.ipk
 输出：
 
 ```text
-dist/openwrt25/luci-app-wifidog-v3-1.0.0-r1.apk
+dist/openwrt25/luci-app-wifidog-v3-1.0.1-r1.apk
 ```
 
 ## 安装
 
 最新发布包：
 
-- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.0>
-- IPK：`luci-app-wifidog-v3_1.0.0-1_all.ipk`
-- APK：`luci-app-wifidog-v3-1.0.0-r1.apk`
+- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.1>
+- IPK：`luci-app-wifidog-v3_1.0.1-1_all.ipk`
+- APK：`luci-app-wifidog-v3-1.0.1-r1.apk`
 
 OpenWrt 23/24：
 
 ```sh
 opkg update
-opkg install /tmp/luci-app-wifidog-v3_1.0.0-1_all.ipk
+opkg install /tmp/luci-app-wifidog-v3_1.0.1-1_all.ipk
 ```
 
 OpenWrt 25：
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.0-r1.apk
+apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.1-r1.apk
 ```
 
 安装后进入 LuCI：
@@ -126,6 +127,7 @@ apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.0-r1.apk
 - `auth_code_enabled`：是否启用授权码认证，默认 `1`
 - `auth_timeout`：授权时长，单位分钟，默认 `1440`
 - `authcode.*.auth_minutes`：单个授权码使用后的授权时长，单位分钟；为空时使用 `auth_timeout`
+- `device.*.user_agent` / `ua_summary`：Portal 记录的原始 UA 和解析出的设备摘要
 - `radius_enabled`：是否启用 RADIUS 认证，默认 `0`
 - `radius_server` / `radius_port` / `radius_secret`：FreeRADIUS 服务器地址、端口和共享密钥
 - `radius_nas_id`：发送给 RADIUS 服务器的 NAS Identifier

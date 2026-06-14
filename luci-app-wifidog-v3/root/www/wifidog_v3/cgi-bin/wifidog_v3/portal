@@ -170,6 +170,159 @@ local function clean_text(s, max_len)
 	return s
 end
 
+local function clean_user_agent_token(s, max_len)
+	s = clean_text(s, max_len or 128):gsub("^%s+", ""):gsub("%s+$", "")
+	s = s:gsub("%s+", " ")
+	return s
+end
+
+local function ua_version(value)
+	value = tostring(value or ""):gsub("_", ".")
+	return value:gsub("[^%d%.].*$", "")
+end
+
+local function parse_user_agent(ua)
+	ua = clean_user_agent_token(ua, 512)
+	local lower = ua:lower()
+	local info = {
+		os = "未知",
+		browser = "未知",
+		device_type = "未知",
+		model = "未知"
+	}
+
+	if ua == "" then
+		info.summary = "未知设备"
+		return info
+	end
+
+	if lower:find("bot", 1, true) or lower:find("spider", 1, true) or lower:find("crawler", 1, true) then
+		info.device_type = "机器人"
+	end
+
+	if ua:find("iPhone", 1, true) then
+		info.device_type = "手机"
+		info.model = "iPhone"
+		local version = ua:match("iPhone OS ([%d_%.]+)")
+		info.os = version and ("iOS " .. ua_version(version)) or "iOS"
+	elseif ua:find("iPad", 1, true) then
+		info.device_type = "平板"
+		info.model = "iPad"
+		local version = ua:match("CPU OS ([%d_%.]+)")
+		info.os = version and ("iPadOS " .. ua_version(version)) or "iPadOS"
+	elseif ua:find("iPod", 1, true) then
+		info.device_type = "手机"
+		info.model = "iPod touch"
+		local version = ua:match("iPhone OS ([%d_%.]+)")
+		info.os = version and ("iOS " .. ua_version(version)) or "iOS"
+	elseif ua:find("Android", 1, true) then
+		local version = ua:match("Android%s+([%d%.]+)")
+		info.os = version and ("Android " .. ua_version(version)) or "Android"
+		info.device_type = ua:find("Mobile", 1, true) and "手机" or "平板"
+		local model = ua:match("Android%s+[%d%.]+;%s*([^;%)]+)%s+Build/")
+			or ua:match("Android%s+[%d%.]+;%s*([^;%)]+)[;)]")
+			or ""
+		model = clean_user_agent_token(model, 96)
+		if model == "" or model == "wv" or model == "K" or model:lower():find("^zh") or model:lower():find("^en") then
+			model = "Android设备"
+		end
+		info.model = model
+	elseif ua:find("Windows NT", 1, true) then
+		info.device_type = "电脑"
+		info.model = "Windows PC"
+		local nt = ua:match("Windows NT ([%d%.]+)")
+		if nt == "10.0" then
+			info.os = "Windows 10/11"
+		elseif nt then
+			info.os = "Windows NT " .. nt
+		else
+			info.os = "Windows"
+		end
+	elseif ua:find("CrOS", 1, true) then
+		info.device_type = "电脑"
+		info.model = "Chromebook"
+		local version = ua:match("CrOS [^%s]+ ([%d%.]+)")
+		info.os = version and ("ChromeOS " .. ua_version(version)) or "ChromeOS"
+	elseif ua:find("Macintosh", 1, true) or ua:find("Mac OS X", 1, true) then
+		if ua:find("Mobile/", 1, true) and ua:find("Safari/", 1, true) then
+			info.device_type = "平板"
+			info.model = "iPad"
+			info.os = "iPadOS"
+		else
+			info.device_type = "电脑"
+			info.model = "Mac"
+			local version = ua:match("Mac OS X ([%d_%.]+)")
+			info.os = version and ("macOS " .. ua_version(version)) or "macOS"
+		end
+	elseif ua:find("Linux", 1, true) then
+		info.device_type = info.device_type ~= "未知" and info.device_type or "电脑"
+		info.model = "Linux PC"
+		info.os = "Linux"
+	end
+
+	local browser, version
+	if ua:find("MicroMessenger/", 1, true) then
+		version = ua:match("MicroMessenger/([%d%.]+)")
+		browser = "微信内置浏览器"
+	elseif ua:find("EdgA/", 1, true) or ua:find("EdgiOS/", 1, true) or ua:find("Edg/", 1, true) then
+		version = ua:match("EdgA/([%d%.]+)") or ua:match("EdgiOS/([%d%.]+)") or ua:match("Edg/([%d%.]+)")
+		browser = "Edge"
+	elseif ua:find("OPR/", 1, true) or ua:find("Opera/", 1, true) then
+		version = ua:match("OPR/([%d%.]+)") or ua:match("Opera/([%d%.]+)")
+		browser = "Opera"
+	elseif ua:find("SamsungBrowser/", 1, true) then
+		version = ua:match("SamsungBrowser/([%d%.]+)")
+		browser = "Samsung Browser"
+	elseif ua:find("HuaweiBrowser/", 1, true) then
+		version = ua:match("HuaweiBrowser/([%d%.]+)")
+		browser = "Huawei Browser"
+	elseif ua:find("MiuiBrowser/", 1, true) then
+		version = ua:match("MiuiBrowser/([%d%.]+)")
+		browser = "小米浏览器"
+	elseif ua:find("CriOS/", 1, true) then
+		version = ua:match("CriOS/([%d%.]+)")
+		browser = "Chrome iOS"
+	elseif ua:find("Chrome/", 1, true) then
+		version = ua:match("Chrome/([%d%.]+)")
+		browser = "Chrome"
+	elseif ua:find("FxiOS/", 1, true) then
+		version = ua:match("FxiOS/([%d%.]+)")
+		browser = "Firefox iOS"
+	elseif ua:find("Firefox/", 1, true) then
+		version = ua:match("Firefox/([%d%.]+)")
+		browser = "Firefox"
+	elseif ua:find("Version/", 1, true) and ua:find("Safari/", 1, true) then
+		version = ua:match("Version/([%d%.]+)")
+		browser = "Safari"
+	elseif ua:find("CaptiveNetworkSupport", 1, true) or lower:find("captive", 1, true) then
+		browser = "Captive Portal 探测"
+	end
+	if browser then
+		info.browser = version and (browser .. " " .. ua_version(version)) or browser
+	end
+
+	local parts = {}
+	if info.model ~= "" and info.model ~= "未知" then parts[#parts + 1] = info.model end
+	if info.os ~= "" and info.os ~= "未知" then parts[#parts + 1] = info.os end
+	if info.browser ~= "" and info.browser ~= "未知" then parts[#parts + 1] = info.browser end
+	if #parts == 0 then
+		parts[#parts + 1] = info.device_type ~= "未知" and info.device_type or "未知设备"
+	end
+	info.summary = table.concat(parts, " / ")
+	return info
+end
+
+local function is_generic_user_agent(ua)
+	local lower = tostring(ua or ""):lower()
+	return lower == ""
+		or lower:find("uclient-fetch", 1, true) ~= nil
+		or lower:find("wget", 1, true) ~= nil
+		or lower:find("curl", 1, true) ~= nil
+		or lower:find("python-requests", 1, true) ~= nil
+		or lower:find("go-http-client", 1, true) ~= nil
+		or lower:find("libwww", 1, true) ~= nil
+end
+
 local function setting_text(key, default, max_len)
 	local value = uci_get("wifidog_v3.settings." .. key, "")
 	if value == "" then
@@ -431,6 +584,57 @@ local function get_device_by_mac(mac)
 	end
 
 	return nil
+end
+
+local function record_client_user_agent(mac, ip, path)
+	local ua = clean_user_agent_token(os.getenv("HTTP_USER_AGENT") or "", 512)
+	if ua == "" or not mac or mac == "" then
+		return
+	end
+
+	mac = tostring(mac):upper()
+	local now = os.time()
+	local section = mac_to_section(mac)
+	local existing = get_device_by_mac(mac)
+	if existing and (existing.user_agent or "") ~= "" and existing.user_agent ~= ua then
+		if is_generic_user_agent(ua) and not is_generic_user_agent(existing.user_agent) then
+			return
+		end
+		if tostring(path or "") ~= "/portal" then
+			return
+		end
+	end
+	local old_summary = existing and existing.ua_summary or ""
+	local last_seen = tonumber((existing and existing.ua_seen) or "0") or 0
+	if existing and existing.user_agent == ua and tostring(existing.ip or "") == tostring(ip or "") and now - last_seen < 300 then
+		return
+	end
+
+	local parsed = parse_user_agent(ua)
+	if not existing then
+		uci_set("wifidog_v3." .. section .. "=device")
+		uci_set("wifidog_v3." .. section .. ".mac=" .. mac)
+		uci_set("wifidog_v3." .. section .. ".type=pending")
+		uci_set("wifidog_v3." .. section .. ".auth_expiry=0")
+		uci_set("wifidog_v3." .. section .. ".created=" .. tostring(now))
+	else
+		section = existing[".name"] or section
+	end
+	if ip and ip ~= "" then
+		uci_set("wifidog_v3." .. section .. ".ip=" .. clean_text(ip, 64))
+	end
+	uci_set("wifidog_v3." .. section .. ".user_agent=" .. ua)
+	uci_set("wifidog_v3." .. section .. ".ua_device_type=" .. clean_text(parsed.device_type, 32))
+	uci_set("wifidog_v3." .. section .. ".ua_os=" .. clean_text(parsed.os, 64))
+	uci_set("wifidog_v3." .. section .. ".ua_browser=" .. clean_text(parsed.browser, 64))
+	uci_set("wifidog_v3." .. section .. ".ua_model=" .. clean_text(parsed.model, 96))
+	uci_set("wifidog_v3." .. section .. ".ua_summary=" .. clean_text(parsed.summary, 192))
+	uci_set("wifidog_v3." .. section .. ".ua_seen=" .. tostring(now))
+	uci_commit()
+
+	if old_summary ~= parsed.summary then
+		append_runtime_log("识别到设备UA MAC=" .. mac .. " IP=" .. tostring(ip or "") .. " 设备=" .. parsed.summary)
+	end
 end
 
 local function load_ip_sessions()
@@ -718,6 +922,7 @@ local function authorize_client(mac, ip, source, auth_code, auth_minutes, auth_s
 		return false
 	end
 
+	local saved = get_device_by_mac(mac) or {}
 	local timeout = effective_auth_seconds(auth_minutes, auth_seconds)
 	local now = os.time()
 	local expiry = now + timeout
@@ -738,8 +943,18 @@ local function authorize_client(mac, ip, source, auth_code, auth_minutes, auth_s
 		uci_set("wifidog_v3." .. section .. ".auth_code=" .. tostring(auth_code or ""))
 		uci_set("wifidog_v3." .. section .. ".radius_user=")
 	end
+	uci_set("wifidog_v3." .. section .. ".note=" .. clean_text(saved.note or "", 256))
+	uci_set("wifidog_v3." .. section .. ".hostname=" .. clean_text(saved.hostname or "", 128))
+	uci_set("wifidog_v3." .. section .. ".user_agent=" .. clean_text(saved.user_agent or "", 512))
+	uci_set("wifidog_v3." .. section .. ".ua_device_type=" .. clean_text(saved.ua_device_type or "", 32))
+	uci_set("wifidog_v3." .. section .. ".ua_os=" .. clean_text(saved.ua_os or "", 64))
+	uci_set("wifidog_v3." .. section .. ".ua_browser=" .. clean_text(saved.ua_browser or "", 64))
+	uci_set("wifidog_v3." .. section .. ".ua_model=" .. clean_text(saved.ua_model or "", 96))
+	uci_set("wifidog_v3." .. section .. ".ua_summary=" .. clean_text(saved.ua_summary or "", 192))
+	uci_set("wifidog_v3." .. section .. ".ua_seen=" .. clean_text(saved.ua_seen or "", 32))
 	uci_set("wifidog_v3." .. section .. ".created=" .. tostring(now))
 	uci_commit()
+	record_client_user_agent(mac, ip)
 	remember_ip_session(ip, mac, expiry)
 	append_runtime_log("自助认证成功 MAC=" .. mac:upper() .. " IP=" .. tostring(ip or "") .. " 方式=" .. auth_source .. " 有效秒数=" .. tostring(timeout))
 	reload_firewall()
@@ -1242,6 +1457,7 @@ local function handle()
 	local device = resolve_client_device(client_ip, client_mac)
 	local path, query, uri = request_target()
 	local query_form = parse_form(query)
+	record_client_user_agent(client_mac, client_ip, path)
 
 	if is_captive_api_path(path) then
 		captive_json_response(captive_api_json(device))

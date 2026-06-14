@@ -421,6 +421,26 @@ local function note_for_transition(mac, posted_note)
 	return device_note_for_mac(mac)
 end
 
+local device_ua_options = {
+	"user_agent",
+	"ua_device_type",
+	"ua_os",
+	"ua_browser",
+	"ua_model",
+	"ua_summary",
+	"ua_seen"
+}
+
+local device_ua_maxlen = {
+	user_agent = 512,
+	ua_device_type = 32,
+	ua_os = 64,
+	ua_browser = 64,
+	ua_model = 96,
+	ua_summary = 192,
+	ua_seen = 32
+}
+
 local function clean_import_value(value, max_len)
 	if value == nil then
 		return nil
@@ -442,6 +462,47 @@ local function normalize_mac(mac)
 		return nil
 	end
 	return compact:gsub("(%x%x)(%x%x)(%x%x)(%x%x)(%x%x)(%x%x)", "%1:%2:%3:%4:%5:%6")
+end
+
+local function device_section_for_mac(mac)
+	local target = normalize_mac(mac)
+	if not target then
+		return nil
+	end
+
+	for _, s in pairs(uci_sections_cli()) do
+		if s[".type"] == "device" and s.mac and normalize_mac(s.mac) == target then
+			return s
+		end
+	end
+	return nil
+end
+
+local function copy_device_ua_options(target, source)
+	target = target or {}
+	source = source or {}
+	for _, key in ipairs(device_ua_options) do
+		target[key] = source[key] or ""
+	end
+	return target
+end
+
+local function set_device_ua_options(section, source)
+	local ok = true
+	source = source or {}
+	for _, key in ipairs(device_ua_options) do
+		ok = ok and uci_cli_set("wifidog_v3." .. section .. "." .. key .. "=" .. (clean_import_value(source[key], device_ua_maxlen[key]) or ""))
+	end
+	return ok
+end
+
+local function enrich_device_payload(dev, source)
+	dev = dev or {}
+	source = source or {}
+	for _, key in ipairs(device_ua_options) do
+		dev[key] = source[key] or ""
+	end
+	return dev
 end
 
 local function delete_devices_by_mac_cli(mac)
@@ -475,6 +536,7 @@ local function move_device_to_pending_cli(mac)
 		note = "",
 		created = tostring(os.time())
 	}
+	copy_device_ua_options(saved, {})
 	local found = false
 
 	for section, s in pairs(uci_sections_cli()) do
@@ -484,6 +546,9 @@ local function move_device_to_pending_cli(mac)
 			if saved.hostname == "" then saved.hostname = s.hostname or "" end
 			if saved.note == "" then saved.note = s.note or "" end
 			if s.created and s.created ~= "" then saved.created = s.created end
+			for _, key in ipairs(device_ua_options) do
+				if saved[key] == "" then saved[key] = s[key] or "" end
+			end
 			uci_cli_delete("wifidog_v3." .. section)
 		end
 	end
@@ -500,6 +565,7 @@ local function move_device_to_pending_cli(mac)
 		and uci_cli_set("wifidog_v3." .. section .. ".note=" .. clean_import_value(saved.note, 256))
 		and uci_cli_set("wifidog_v3." .. section .. ".type=pending")
 		and uci_cli_set("wifidog_v3." .. section .. ".auth_expiry=0")
+		and set_device_ua_options(section, saved)
 		and uci_cli_set("wifidog_v3." .. section .. ".created=" .. clean_import_value(saved.created, 32))
 end
 
@@ -674,7 +740,14 @@ local function normalize_backup_payload(payload)
 			auth_source = clean_import_value(dev.auth_source, 32) or "",
 			auth_code = clean_import_value(dev.auth_code, 128) or "",
 			radius_user = clean_import_value(dev.radius_user, 128) or "",
-			created = clean_import_value(dev.created, 32) or tostring(os.time())
+				created = clean_import_value(dev.created, 32) or tostring(os.time()),
+				user_agent = clean_import_value(dev.user_agent, device_ua_maxlen.user_agent) or "",
+				ua_device_type = clean_import_value(dev.ua_device_type, device_ua_maxlen.ua_device_type) or "",
+				ua_os = clean_import_value(dev.ua_os, device_ua_maxlen.ua_os) or "",
+				ua_browser = clean_import_value(dev.ua_browser, device_ua_maxlen.ua_browser) or "",
+				ua_model = clean_import_value(dev.ua_model, device_ua_maxlen.ua_model) or "",
+				ua_summary = clean_import_value(dev.ua_summary, device_ua_maxlen.ua_summary) or "",
+				ua_seen = clean_import_value(dev.ua_seen, device_ua_maxlen.ua_seen) or ""
 		}
 	end
 
@@ -759,11 +832,14 @@ local function restore_backup_payload(payload)
 			set_nonempty(section, "note", dev.note)
 			set_required(section, "type", dev.type)
 			set_required(section, "auth_expiry", dev.auth_expiry)
-			set_nonempty(section, "auth_source", dev.auth_source)
-			set_nonempty(section, "auth_code", dev.auth_code)
-			set_nonempty(section, "radius_user", dev.radius_user)
-			set_nonempty(section, "created", dev.created)
-		end
+				set_nonempty(section, "auth_source", dev.auth_source)
+				set_nonempty(section, "auth_code", dev.auth_code)
+				set_nonempty(section, "radius_user", dev.radius_user)
+				for _, key in ipairs(device_ua_options) do
+					set_nonempty(section, key, dev[key])
+				end
+				set_nonempty(section, "created", dev.created)
+			end
 
 		for idx, code in ipairs(payload.auth_codes) do
 			local safe_code = code.code:gsub("[^%w_]", "_"):sub(1, 32)
@@ -832,6 +908,7 @@ function action_add_whitelist()
 
 	mac = mac:upper()
 	note = note_for_transition(mac, note)
+	local saved = device_section_for_mac(mac) or {}
 
 	delete_devices_by_mac_cli(mac)
 
@@ -841,11 +918,12 @@ function action_add_whitelist()
 		and uci_cli_set("wifidog_v3." .. section .. ".mac=" .. mac)
 		and uci_cli_set("wifidog_v3." .. section .. ".ip=" .. (ip or ""))
 		and uci_cli_set("wifidog_v3." .. section .. ".hostname=" .. hostname)
-		and uci_cli_set("wifidog_v3." .. section .. ".note=" .. note)
-		and uci_cli_set("wifidog_v3." .. section .. ".type=whitelist")
-		and uci_cli_set("wifidog_v3." .. section .. ".auth_expiry=0")
-		and uci_cli_set("wifidog_v3." .. section .. ".created=" .. tostring(os.time()))
-		and uci_cli_commit("wifidog_v3")
+			and uci_cli_set("wifidog_v3." .. section .. ".note=" .. note)
+			and uci_cli_set("wifidog_v3." .. section .. ".type=whitelist")
+			and uci_cli_set("wifidog_v3." .. section .. ".auth_expiry=0")
+			and set_device_ua_options(section, saved)
+			and uci_cli_set("wifidog_v3." .. section .. ".created=" .. tostring(os.time()))
+			and uci_cli_commit("wifidog_v3")
 
 	if ok then
 		append_runtime_log("设备已加入白名单 MAC=" .. mac .. " IP=" .. tostring(ip or ""))
@@ -871,6 +949,7 @@ function action_add_blacklist()
 
 	mac = mac:upper()
 	note = note_for_transition(mac, note)
+	local saved = device_section_for_mac(mac) or {}
 
 	delete_devices_by_mac_cli(mac)
 
@@ -879,11 +958,12 @@ function action_add_blacklist()
 		and uci_cli_set("wifidog_v3." .. section .. ".mac=" .. mac)
 		and uci_cli_set("wifidog_v3." .. section .. ".ip=" .. (ip or ""))
 		and uci_cli_set("wifidog_v3." .. section .. ".hostname=" .. hostname)
-		and uci_cli_set("wifidog_v3." .. section .. ".note=" .. note)
-		and uci_cli_set("wifidog_v3." .. section .. ".type=blacklist")
-		and uci_cli_set("wifidog_v3." .. section .. ".auth_expiry=0")
-		and uci_cli_set("wifidog_v3." .. section .. ".created=" .. tostring(os.time()))
-		and uci_cli_commit("wifidog_v3")
+			and uci_cli_set("wifidog_v3." .. section .. ".note=" .. note)
+			and uci_cli_set("wifidog_v3." .. section .. ".type=blacklist")
+			and uci_cli_set("wifidog_v3." .. section .. ".auth_expiry=0")
+			and set_device_ua_options(section, saved)
+			and uci_cli_set("wifidog_v3." .. section .. ".created=" .. tostring(os.time()))
+			and uci_cli_commit("wifidog_v3")
 
 	if ok then
 		append_runtime_log("设备已加入黑名单 MAC=" .. mac .. " IP=" .. tostring(ip or ""))
@@ -909,6 +989,7 @@ function action_add_authorize()
 
 	mac = mac:upper()
 	note = note_for_transition(mac, note)
+	local saved = device_section_for_mac(mac) or {}
 
 	local auth_timeout = tonumber(sys.exec("uci -q get wifidog_v3.settings.auth_timeout 2>/dev/null") or "1440")
 	local expiry = os.time() + (auth_timeout * 60)
@@ -923,10 +1004,11 @@ function action_add_authorize()
 		and uci_cli_set("wifidog_v3." .. section .. ".note=" .. note)
 		and uci_cli_set("wifidog_v3." .. section .. ".type=authorized")
 		and uci_cli_set("wifidog_v3." .. section .. ".auth_expiry=" .. tostring(expiry))
-		and uci_cli_set("wifidog_v3." .. section .. ".auth_source=manual")
-		and uci_cli_set("wifidog_v3." .. section .. ".auth_code=")
-		and uci_cli_set("wifidog_v3." .. section .. ".created=" .. tostring(os.time()))
-		and uci_cli_commit("wifidog_v3")
+			and uci_cli_set("wifidog_v3." .. section .. ".auth_source=manual")
+			and uci_cli_set("wifidog_v3." .. section .. ".auth_code=")
+			and set_device_ua_options(section, saved)
+			and uci_cli_set("wifidog_v3." .. section .. ".created=" .. tostring(os.time()))
+			and uci_cli_commit("wifidog_v3")
 
 	if ok then
 		append_runtime_log("管理员手动授权设备 MAC=" .. mac .. " IP=" .. tostring(ip or "") .. " 到期=" .. os.date("%Y-%m-%d %H:%M:%S", expiry))
@@ -1039,12 +1121,13 @@ function action_scan_devices()
 			-- Only show unmanaged devices (pending)
 			if not managed[mac] then
 				local saved = pending[mac] or {}
-				devices[#devices + 1] = {
+				local dev = {
 					mac = mac,
 					ip = info.ip,
 					hostname = (info.hostname and info.hostname ~= "" and info.hostname) or saved.hostname or "",
 					note = saved.note or ""
 				}
+				devices[#devices + 1] = enrich_device_payload(dev, saved)
 			end
 		end
 	end
@@ -1067,13 +1150,13 @@ function action_list_whitelist()
 	local devices = {}
 	for _, s in pairs(uci_sections_cli()) do
 		if s[".type"] == "device" and s.type == "whitelist" then
-			devices[#devices + 1] = {
+			devices[#devices + 1] = enrich_device_payload({
 				mac = s.mac or "",
 				ip = s.ip or "",
 				hostname = s.hostname or "",
 				note = s.note or "",
 				created = s.created or "0"
-			}
+			}, s)
 		end
 	end
 
@@ -1092,13 +1175,13 @@ function action_list_blacklist()
 	local devices = {}
 	for _, s in pairs(uci_sections_cli()) do
 		if s[".type"] == "device" and s.type == "blacklist" then
-			devices[#devices + 1] = {
+			devices[#devices + 1] = enrich_device_payload({
 				mac = s.mac or "",
 				ip = s.ip or "",
 				hostname = s.hostname or "",
 				note = s.note or "",
 				created = s.created or "0"
-			}
+			}, s)
 		end
 	end
 
@@ -1118,7 +1201,7 @@ function action_list_authorized()
 		if s[".type"] == "device" and s.type == "authorized" then
 			local remaining, remaining_text = auth_remaining(s.auth_expiry)
 			if remaining > 0 then
-				devices[#devices + 1] = {
+				devices[#devices + 1] = enrich_device_payload({
 					mac = s.mac or "",
 					ip = s.ip or "",
 					hostname = s.hostname or "",
@@ -1131,7 +1214,7 @@ function action_list_authorized()
 					auth_source_text = auth_source_text(s.auth_source),
 					auth_code = s.auth_code or "",
 					radius_user = s.radius_user or ""
-				}
+				}, s)
 			end
 		end
 	end

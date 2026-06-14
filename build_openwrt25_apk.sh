@@ -9,14 +9,21 @@ SDK_GCC="${SDK_GCC:-14.3.0}"
 SDK_LIBC="${SDK_LIBC:-musl}"
 SDK_DIR="${SDK_DIR:-/tmp/wifidog_v3_sdk}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-debian:bookworm-slim}"
+OPENWRT_DOWNLOAD_BASE="${OPENWRT_DOWNLOAD_BASE:-https://downloads.openwrt.org}"
+DEBIAN_MIRROR_BASE="${DEBIAN_MIRROR_BASE:-}"
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 OUTPUT_DIR="$REPO_ROOT/dist/openwrt25"
 SDK_BASENAME="openwrt-sdk-${OPENWRT_VERSION}-x86-64_gcc-${SDK_GCC}_${SDK_LIBC}.Linux-${SDK_HOST}"
 SDK_TARBALL="${SDK_BASENAME}.tar.zst"
-SDK_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${TARGET}/${SDK_TARBALL}"
+SDK_URL="${OPENWRT_DOWNLOAD_BASE%/}/releases/${OPENWRT_VERSION}/targets/${TARGET}/${SDK_TARBALL}"
 
 mkdir -p "$SDK_DIR" "$OUTPUT_DIR"
+
+if [ -f "$SDK_DIR/$SDK_TARBALL" ] && ! zstd -t "$SDK_DIR/$SDK_TARBALL" >/dev/null 2>&1; then
+    echo "Removing incomplete OpenWrt SDK tarball: $SDK_DIR/$SDK_TARBALL"
+    rm -f "$SDK_DIR/$SDK_TARBALL"
+fi
 
 if [ ! -f "$SDK_DIR/$SDK_TARBALL" ]; then
     echo "Downloading OpenWrt SDK: $SDK_URL"
@@ -25,12 +32,20 @@ fi
 
 echo "Building APK with OpenWrt ${OPENWRT_VERSION} SDK..."
 docker run --rm --platform linux/amd64 \
+    -e DEBIAN_MIRROR_BASE="$DEBIAN_MIRROR_BASE" \
     -v "$SDK_DIR/$SDK_TARBALL:/sdk.tar.zst:ro" \
     -v "$REPO_ROOT:/repo" \
     -w /work \
     "$DOCKER_IMAGE" \
-    bash -lc '
+bash -lc '
 set -euo pipefail
+if [ -n "${DEBIAN_MIRROR_BASE:-}" ]; then
+    mirror="${DEBIAN_MIRROR_BASE%/}"
+    sed -i \
+        -e "s|http://deb.debian.org/debian-security|${mirror}/debian-security|g" \
+        -e "s|http://deb.debian.org/debian|${mirror}/debian|g" \
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+fi
 apt-get update >/dev/null
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential gawk gcc-multilib flex gettext git libncurses-dev libssl-dev \

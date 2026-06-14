@@ -13,6 +13,7 @@ WiFiDog V3 is a LuCI network authentication system for OpenWrt. It manages pendi
 - Device discovery from ARP tables and DHCP leases.
 - Device list management for pending, whitelisted, blacklisted, and authorized clients.
 - MAC-bound notes that survive list transitions.
+- Device identification from Portal User-Agent strings, including device type, OS, browser, and detectable model/family, preserved by MAC address.
 - Whitelist mode: unrestricted LAN and WAN access.
 - Blacklist mode: LAN access allowed, public Internet blocked, self-service authorization disabled.
 - Manual authorization from LuCI with a default 24-hour validity period.
@@ -59,7 +60,7 @@ Build the OpenWrt 23/24 IPK:
 Output:
 
 ```text
-dist/luci-app-wifidog-v3_1.0.0-1_all.ipk
+dist/luci-app-wifidog-v3_1.0.1-1_all.ipk
 ```
 
 Build the OpenWrt 25 APK:
@@ -71,28 +72,28 @@ Build the OpenWrt 25 APK:
 Output:
 
 ```text
-dist/openwrt25/luci-app-wifidog-v3-1.0.0-r1.apk
+dist/openwrt25/luci-app-wifidog-v3-1.0.1-r1.apk
 ```
 
 ## Install
 
 Latest release packages:
 
-- Release: <https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.0>
-- IPK: `luci-app-wifidog-v3_1.0.0-1_all.ipk`
-- APK: `luci-app-wifidog-v3-1.0.0-r1.apk`
+- Release: <https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.1>
+- IPK: `luci-app-wifidog-v3_1.0.1-1_all.ipk`
+- APK: `luci-app-wifidog-v3-1.0.1-r1.apk`
 
 OpenWrt 23/24:
 
 ```sh
 opkg update
-opkg install /tmp/luci-app-wifidog-v3_1.0.0-1_all.ipk
+opkg install /tmp/luci-app-wifidog-v3_1.0.1-1_all.ipk
 ```
 
 OpenWrt 25:
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.0-r1.apk
+apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.1-r1.apk
 ```
 
 After installation, open LuCI:
@@ -127,6 +128,7 @@ Common options:
 - `auth_code_enabled`: enable authorization-code login, default `1`
 - `auth_timeout`: authorization lifetime in minutes, default `1440`
 - `authcode.*.auth_minutes`: per-code authorization lifetime in minutes; empty values fall back to `auth_timeout`
+- `device.*.user_agent` / `ua_summary`: raw Portal User-Agent and parsed device summary
 - `radius_enabled`: enable RADIUS authentication, default `0`
 - `radius_server` / `radius_port` / `radius_secret`: FreeRADIUS server address, port, and shared secret
 - `radius_nas_id`: NAS Identifier sent to the RADIUS server

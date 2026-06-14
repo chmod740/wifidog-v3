@@ -78,13 +78,18 @@ local sec = section(mac)
 os.execute("uci -q delete wifidog_v3." .. sec .. " >/dev/null 2>&1")
 os.execute("uci -q commit wifidog_v3 >/dev/null 2>&1")
 
+local iphone_ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+os.execute("printf '%s\\n' '1893456000 " .. mac .. " 192.168.77.31 utm-phone *' >> /tmp/dhcp.leases")
+read_cmd('env REQUEST_METHOD=GET REQUEST_URI=/portal REMOTE_ADDR=192.168.77.31 HTTP_USER_AGENT="' .. iphone_ua .. '" /www/wifidog_v3/cgi-bin/wifidog_v3/portal >/tmp/wifidog_v3_ua_probe.html && echo ok')
+expect("portal records parsed ua", uci_get("wifidog_v3." .. sec .. ".ua_summary"):find("iPhone", 1, true) ~= nil and uci_get("wifidog_v3." .. sec .. ".ua_summary"):find("iOS 17.5", 1, true) ~= nil and uci_get("wifidog_v3." .. sec .. ".ua_browser"):find("Safari 17.5", 1, true) ~= nil and uci_get("wifidog_v3." .. sec .. ".ua_device_type") == "手机")
+
 run_action({
 	mac = mac,
 	ip = "192.168.77.31",
 	hostname = "utm-phone",
 	note = "UTM-NOTE"
 }, controller.action_update_note)
-expect("pending note saved", uci_get("wifidog_v3." .. sec .. ".type") == "pending" and uci_get("wifidog_v3." .. sec .. ".note") == "UTM-NOTE")
+expect("pending note saved", uci_get("wifidog_v3." .. sec .. ".type") == "pending" and uci_get("wifidog_v3." .. sec .. ".note") == "UTM-NOTE" and uci_get("wifidog_v3." .. sec .. ".ua_summary"):find("iPhone", 1, true) ~= nil)
 
 run_action({
 	mac = mac,
@@ -92,10 +97,10 @@ run_action({
 	hostname = "utm-phone",
 	note = ""
 }, controller.action_add_whitelist)
-expect("pending to whitelist keeps note", uci_get("wifidog_v3." .. sec .. ".type") == "whitelist" and uci_get("wifidog_v3." .. sec .. ".note") == "UTM-NOTE")
+expect("pending to whitelist keeps note and ua", uci_get("wifidog_v3." .. sec .. ".type") == "whitelist" and uci_get("wifidog_v3." .. sec .. ".note") == "UTM-NOTE" and uci_get("wifidog_v3." .. sec .. ".ua_summary"):find("iPhone", 1, true) ~= nil)
 
 run_action({ mac = mac }, controller.action_remove_device)
-expect("whitelist remove keeps pending note", uci_get("wifidog_v3." .. sec .. ".type") == "pending" and uci_get("wifidog_v3." .. sec .. ".note") == "UTM-NOTE")
+expect("whitelist remove keeps pending note and ua", uci_get("wifidog_v3." .. sec .. ".type") == "pending" and uci_get("wifidog_v3." .. sec .. ".note") == "UTM-NOTE" and uci_get("wifidog_v3." .. sec .. ".ua_summary"):find("iPhone", 1, true) ~= nil)
 
 run_action({
 	mac = mac,
@@ -103,7 +108,7 @@ run_action({
 	hostname = "utm-phone",
 	note = ""
 }, controller.action_add_authorize)
-expect("manual auth keeps note", uci_get("wifidog_v3." .. sec .. ".type") == "authorized" and uci_get("wifidog_v3." .. sec .. ".note") == "UTM-NOTE" and uci_get("wifidog_v3." .. sec .. ".auth_source") == "manual")
+expect("manual auth keeps note and ua", uci_get("wifidog_v3." .. sec .. ".type") == "authorized" and uci_get("wifidog_v3." .. sec .. ".note") == "UTM-NOTE" and uci_get("wifidog_v3." .. sec .. ".auth_source") == "manual" and uci_get("wifidog_v3." .. sec .. ".ua_summary"):find("iPhone", 1, true) ~= nil)
 
 run_action({
 	mac = mac,
@@ -111,10 +116,11 @@ run_action({
 	hostname = "utm-phone",
 	note = ""
 }, controller.action_add_blacklist)
-expect("authorized to blacklist keeps note", uci_get("wifidog_v3." .. sec .. ".type") == "blacklist" and uci_get("wifidog_v3." .. sec .. ".note") == "UTM-NOTE")
+expect("authorized to blacklist keeps note and ua", uci_get("wifidog_v3." .. sec .. ".type") == "blacklist" and uci_get("wifidog_v3." .. sec .. ".note") == "UTM-NOTE" and uci_get("wifidog_v3." .. sec .. ".ua_summary"):find("iPhone", 1, true) ~= nil)
 
 run_action({}, controller.action_export_config)
 expect("export contains note", last_write:find('"app"%s*:%s*"wifidog_v3"') ~= nil and last_write:find("UTM%-NOTE") ~= nil, last_write)
+expect("export contains ua metadata", last_write:find("ua_summary", 1, true) ~= nil and last_write:find("iPhone", 1, true) ~= nil, last_write)
 
 local backup_json = [[{
 	"app": "wifidog_v3",
@@ -142,6 +148,13 @@ local backup_json = [[{
 			"note": "UTM-BACKUP-NOTE",
 			"type": "whitelist",
 			"auth_expiry": "0",
+			"user_agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A.240505.005) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36",
+			"ua_device_type": "手机",
+			"ua_os": "Android 14",
+			"ua_browser": "Chrome 125.0.0.0",
+			"ua_model": "Pixel 8",
+			"ua_summary": "Pixel 8 / Android 14 / Chrome 125.0.0.0",
+			"ua_seen": "1779450001",
 			"created": "1779450000"
 		}
 	],
@@ -161,6 +174,7 @@ local backup_json = [[{
 run_action({ config_json = backup_json }, controller.action_import_config)
 local import_sec = section("AA:BB:CC:DD:EE:32")
 expect("import restores whitelist note", uci_get("wifidog_v3." .. import_sec .. ".type") == "whitelist" and uci_get("wifidog_v3." .. import_sec .. ".note") == "UTM-BACKUP-NOTE")
+expect("import restores ua metadata", uci_get("wifidog_v3." .. import_sec .. ".ua_summary") == "Pixel 8 / Android 14 / Chrome 125.0.0.0" and uci_get("wifidog_v3." .. import_sec .. ".ua_device_type") == "手机")
 expect("import restores auth code", read_cmd("uci show wifidog_v3 | grep -c \"code='UTMBACKUP'\"") ~= "0")
 expect("import restores auth code duration", read_cmd("uci show wifidog_v3 | grep -c \"auth_minutes='45'\"") ~= "0")
 
@@ -173,9 +187,11 @@ expect("portal implements captive api and legacy probes", portal:find("applicati
 expect("portal supports configurable themes and copy", portal:find("portal_theme_css", 1, true) ~= nil and portal:find("portal_prompt", 1, true) ~= nil and portal:find("portal_button_text", 1, true) ~= nil)
 expect("portal supports per-code auth duration", portal:find("effective_auth_seconds", 1, true) ~= nil and portal:find("auth_minutes", 1, true) ~= nil)
 expect("portal supports radius auth", portal:find("radius_authenticate", 1, true) ~= nil and portal:find("session_timeout", 1, true) ~= nil and portal:find("auth_method", 1, true) ~= nil)
+expect("portal records and parses ua", portal:find("record_client_user_agent", 1, true) ~= nil and portal:find("parse_user_agent", 1, true) ~= nil and portal:find("ua_summary", 1, true) ~= nil)
 
 local controller_file = read_cmd("cat /usr/lib/lua/luci/controller/wifidog_v3.lua")
 expect("controller exposes runtime logs api", controller_file:find("action_runtime_logs", 1, true) ~= nil and controller_file:find("action_clear_runtime_logs", 1, true) ~= nil and controller_file:find("/var/log/wifidog_v3.log", 1, true) ~= nil)
+expect("controller preserves ua metadata", controller_file:find("device_ua_options", 1, true) ~= nil and controller_file:find("enrich_device_payload", 1, true) ~= nil and controller_file:find("ua_summary", 1, true) ~= nil)
 
 os.execute("uci -q set wifidog_v3.settings.portal_theme=warm")
 os.execute("uci -q set wifidog_v3.settings.portal_title='UTM访客网络'")

@@ -13,6 +13,8 @@ local style = [[
 .wifidog-btn-secondary { background: #607d8b; color: white; border-color: #607d8b; }
 .wifidog-note { width: 160px; max-width: 100%; padding: 5px 7px; border: 1px solid #ccc; border-radius: 3px; }
 .wifidog-note-dirty { border-color: #ff9800; background: #fff8e1; }
+.wifidog-device-info { max-width: 220px; font-size: 12px; line-height: 1.45; color: #444; word-break: break-word; }
+.wifidog-device-seen { margin-top: 2px; color: #888; }
 .wifidog-empty { text-align: center; padding: 28px; color: #999; }
 .wifidog-loading { text-align: center; padding: 28px; color: #666; }
 .wifidog-msg { padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }
@@ -71,6 +73,29 @@ function esc(s) {
 function addTextCell(row, text) {
 	var td = document.createElement('td');
 	td.textContent = text || '';
+	row.appendChild(td);
+	return td;
+}
+
+function formatSeen(ts) {
+	var n = parseInt(ts, 10);
+	if (!n) return '';
+	return new Date(n * 1000).toLocaleString('zh-CN');
+}
+
+function addDeviceInfoCell(row, dev) {
+	var td = document.createElement('td');
+	var box = document.createElement('div');
+	var summary = document.createElement('div');
+	var seen = document.createElement('div');
+	box.className = 'wifidog-device-info';
+	if (dev.user_agent) box.title = dev.user_agent;
+	summary.textContent = dev.ua_summary || dev.ua_model || dev.ua_os || '-';
+	seen.className = 'wifidog-device-seen';
+	seen.textContent = formatSeen(dev.ua_seen);
+	box.appendChild(summary);
+	if (seen.textContent) box.appendChild(seen);
+	td.appendChild(box);
 	row.appendChild(td);
 	return td;
 }
@@ -162,11 +187,12 @@ function loadPending() {
 		devices.forEach(function(dev, idx) {
 			var noteId = makeNoteId('pending-note', dev, idx);
 			var tr = document.createElement('tr');
-			addTextCell(tr, dev.ip);
-			addTextCell(tr, dev.mac);
-			addTextCell(tr, dev.hostname || '-');
-			addNoteCell(tr, noteId, dev.note || '', '备注');
-			var actions = document.createElement('td');
+				addTextCell(tr, dev.ip);
+				addTextCell(tr, dev.mac);
+				addTextCell(tr, dev.hostname || '-');
+				addDeviceInfoCell(tr, dev);
+				addNoteCell(tr, noteId, dev.note || '', '备注');
+				var actions = document.createElement('td');
 			addButton(actions, 'wifidog-btn-secondary', '保存备注', function() {
 				saveNote(dev.mac, noteId, dev.ip, dev.hostname || '');
 			});
@@ -211,11 +237,12 @@ function loadAuthorized() {
 			var tr = document.createElement('tr');
 			addTextCell(tr, dev.ip);
 			addTextCell(tr, dev.mac);
-			addTextCell(tr, dev.hostname || '-');
-			addTextCell(tr, (dev.auth_source_text || '-') + (dev.auth_source === 'radius' ? radiusUser : authCode));
-			addTextCell(tr, dev.remaining_text || '-');
-			addNoteCell(tr, noteId, dev.note || '');
-			var actions = document.createElement('td');
+				addTextCell(tr, dev.hostname || '-');
+				addTextCell(tr, (dev.auth_source_text || '-') + (dev.auth_source === 'radius' ? radiusUser : authCode));
+				addTextCell(tr, dev.remaining_text || '-');
+				addDeviceInfoCell(tr, dev);
+				addNoteCell(tr, noteId, dev.note || '');
+				var actions = document.createElement('td');
 			addButton(actions, 'wifidog-btn-secondary', '保存备注', function() {
 				saveNote(dev.mac, noteId);
 			});
@@ -287,11 +314,12 @@ document.addEventListener('DOMContentLoaded', function() {
 	<table class="wifidog-table cbi-section-table">
 		<thead>
 			<tr>
-				<th width="13%"><%:IP地址%></th>
-				<th width="18%"><%:MAC地址%></th>
-				<th width="16%"><%:主机名%></th>
-				<th width="17%"><%:备注%></th>
-				<th width="36%"><%:操作%></th>
+				<th width="11%"><%:IP地址%></th>
+				<th width="17%"><%:MAC地址%></th>
+				<th width="13%"><%:主机名%></th>
+				<th width="17%"><%:设备信息%></th>
+				<th width="15%"><%:备注%></th>
+				<th width="27%"><%:操作%></th>
 			</tr>
 		</thead>
 		<tbody id="pending-tbody"></tbody>
@@ -304,13 +332,14 @@ document.addEventListener('DOMContentLoaded', function() {
 	<table class="wifidog-table cbi-section-table">
 		<thead>
 			<tr>
-				<th width="11%"><%:IP地址%></th>
-				<th width="16%"><%:MAC地址%></th>
-				<th width="12%"><%:主机名%></th>
-				<th width="16%"><%:授权方式%></th>
-				<th width="11%"><%:剩余时间%></th>
-				<th width="14%"><%:备注%></th>
-				<th width="20%"><%:操作%></th>
+				<th width="10%"><%:IP地址%></th>
+				<th width="15%"><%:MAC地址%></th>
+				<th width="11%"><%:主机名%></th>
+				<th width="14%"><%:授权方式%></th>
+				<th width="10%"><%:剩余时间%></th>
+				<th width="15%"><%:设备信息%></th>
+				<th width="12%"><%:备注%></th>
+				<th width="13%"><%:操作%></th>
 			</tr>
 		</thead>
 		<tbody id="authorized-tbody"></tbody>

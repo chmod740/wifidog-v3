@@ -7,7 +7,7 @@ import subprocess, sys, os, time, requests, json, re
 
 P=0; F=0; CTR="openwrt-test-v3"; CLI="test-client"; RIP="10.99.0.2"
 HOST="http://localhost:8880"; PORTAL="http://localhost:8888"
-IPK_SRC = "/Users/hupeng/projects/wifidog_v3/dist/luci-app-wifidog-v3_1.0.0-1_all.ipk"
+IPK_SRC = "/Users/hupeng/projects/wifidog_v3/dist/luci-app-wifidog-v3_1.0.1-1_all.ipk"
 APP_SRC = "/Users/hupeng/projects/wifidog_v3/luci-app-wifidog-v3"
 
 def ok(m): global P; P+=1; print(f"  ✅ {m}")
@@ -32,7 +32,7 @@ def phase1_build():
 
     # Control file
     with open(f"{bd}/control/control","w") as f:
-        f.write("Package: luci-app-wifidog-v3\nVersion: 1.0.0-1\nArchitecture: all\n"
+        f.write("Package: luci-app-wifidog-v3\nVersion: 1.0.1-1\nArchitecture: all\n"
                 "Maintainer: WiFiDog V3 Team\nSection: luci\nPriority: optional\n"
                 "Depends: ipset, iptables, libuci-lua, lua, luci-compat, luci-lib-jsonc\n"
                 "Description: WiFiDog V3 Network Authentication System for OpenWrt\n")
@@ -482,7 +482,7 @@ def report():
     print(f"\n{'='*60}")
     print(f"  WiFiDog V3 — Complete Test Report")
     print(f"{'='*60}")
-    print(f"  IPK: dist/luci-app-wifidog-v3_1.0.0-1_all.ipk")
+    print(f"  IPK: dist/luci-app-wifidog-v3_1.0.1-1_all.ipk")
     print(f"  Format: ustar (busybox compatible)")
     print(f"  Dependencies: ipset, iptables, libuci-lua, lua, luci-compat, luci-lib-jsonc")
     print(f"")

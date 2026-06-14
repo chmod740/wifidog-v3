@@ -63,6 +63,10 @@ def client_get(url: str, timeout: int = 5) -> subprocess.CompletedProcess[str]:
     return dexec(CLIENT, "wget", "-T", str(timeout), "-O-", "-q", url)
 
 
+def client_get_with_ua(url: str, user_agent: str, timeout: int = 5) -> subprocess.CompletedProcess[str]:
+    return dexec(CLIENT, "wget", "-T", str(timeout), "-O-", "-q", "-U", user_agent, url)
+
+
 def client_post(url: str, data: str) -> subprocess.CompletedProcess[str]:
     return dexec(CLIENT, "wget", "-O-", "-q", f"--post-data={data}", url)
 
@@ -251,6 +255,13 @@ def main() -> int:
     ok("Portal page reachable", "网络认证" in client_get(PORTAL_URL).stdout)
     portal_html = client_get(PORTAL_URL).stdout
     ok("Portal page offers auth code and RADIUS methods", "授权码" in portal_html and "RADIUS用户名" in portal_html and "auth_method" in portal_html)
+    iphone_ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+    ua_request = client_get_with_ua(PORTAL_URL, iphone_ua)
+    section = mac.replace(":", "_").lower()
+    ua_summary = dsh(ROUTER, f"uci -q get wifidog_v3.{section}.ua_summary").stdout.strip()
+    ua_raw = dsh(ROUTER, f"uci -q get wifidog_v3.{section}.user_agent").stdout.strip()
+    ua_type = dsh(ROUTER, f"uci -q get wifidog_v3.{section}.ua_device_type").stdout.strip()
+    ok("Portal records and parses client User-Agent", ua_request.returncode == 0 and "iPhone" in ua_summary and "iOS 17.5" in ua_summary and "Safari 17.5" in ua_summary and ua_type == "手机" and ua_raw == iphone_ua, ua_summary + ua_raw + ua_type)
     pending_api = client_get(CAPTIVE_API_URL).stdout
     ok("RFC8908 API reports pending client captive", '"captive":true' in pending_api and '"user-portal-url":"http://10.88.0.2:8080/portal"' in pending_api, pending_api)
     dhcp_advert = dexec(ROUTER, "cat", "/tmp/dnsmasq.d/wifidog_v3.conf").stdout
@@ -287,6 +298,28 @@ c.action_scan_devices()
     ok("Pending HTTP beats mock Passwall2 dstnat", "网络认证" in client_get(WAN_URL).stdout)
     dsh(ROUTER, "nft delete table inet passwall2_mock 2>/dev/null")
 
+    ua_whitelist = router_lua(f'''
+local http = require "luci.http"
+local values = {{ mac = "{mac}", ip = "10.88.0.10", hostname = "ua-phone", note = "" }}
+function http.formvalue(k) return values[k] end
+function http.prepare_content(_) end
+function http.write_json(t) if t.success then print("success") else print("fail:" .. (t.message or "")) end end
+local c = require "luci.controller.wifidog_v3"
+c.action_add_whitelist()
+''')
+    ua_whitelist_summary = dsh(ROUTER, f"uci -q get wifidog_v3.{section}.ua_summary").stdout.strip()
+    ua_remove = router_lua(f'''
+local http = require "luci.http"
+local values = {{ mac = "{mac}" }}
+function http.formvalue(k) return values[k] end
+function http.prepare_content(_) end
+function http.write_json(t) if t.success then print("success") else print("fail:" .. (t.message or "")) end end
+local c = require "luci.controller.wifidog_v3"
+c.action_remove_device()
+''')
+    ua_pending_summary = dsh(ROUTER, f"uci -q get wifidog_v3.{section}.ua_summary").stdout.strip()
+    ok("Device User-Agent info survives whitelist and pending transitions", "success" in ua_whitelist.stdout and "success" in ua_remove.stdout and ua_whitelist_summary == ua_summary and ua_pending_summary == ua_summary, ua_whitelist.stdout + ua_remove.stdout + ua_whitelist_summary + ua_pending_summary)
+
     auth_view = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/view/wifidog_v3/auth_codes.htm").read_text()
     ok("Auth code page generate button is non-submit", 'type="button" class="wifidog-btn wifidog-btn-primary"' in auth_view)
     ok("Auth code page exposes per-code duration input", "new-auth-minutes" in auth_view and "auth_minutes" in auth_view and "授权后有效时长" in auth_view)
@@ -294,6 +327,7 @@ c.action_scan_devices()
     ok("Device page avoids inline onclick row handlers", 'onclick="addWhitelist' not in devices_view and "addEventListener('click'" in devices_view)
     ok("Authorized list guards empty/non-array responses", "Array.isArray(data.devices)" in devices_view)
     ok("Pending devices have explicit save-note button", "保存备注" in devices_view and "saveNote(dev.mac, noteId, dev.ip" in devices_view)
+    ok("Device pages display parsed User-Agent information", "设备信息" in devices_view and "addDeviceInfoCell" in devices_view and "ua_summary" in devices_view)
     ok("Auto refresh skips active or unsaved notes", "setInterval(autoRefresh, 15000)" in devices_view and "isEditingNote()" in devices_view and "hasUnsavedNote()" in devices_view)
     ok("Authorized devices can move to whitelist/blacklist", devices_view.count("addWhitelist(dev.mac") >= 2 and devices_view.count("addBlacklist(dev.mac") >= 2)
     backup_view = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/view/wifidog_v3/backup.htm").read_text()
@@ -314,6 +348,7 @@ c.action_scan_devices()
     ok("Portal success polls captive API before iOS close fallback", "认证成功" in portal_cgi and "pollCaptiveApi" in portal_cgi and "captive.apple.com/hotspot-detect.html" in portal_cgi and "window.close" in portal_cgi and "window.location.replace" not in portal_cgi)
     ok("Portal keeps short IP session cache for captive re-probes", "IP_SESSION_FILE" in portal_cgi and "remember_ip_session" in portal_cgi and "resolve_client_device" in portal_cgi)
     ok("Portal implements RFC8908 API and legacy probe success", "application/captive+json" in portal_cgi and "captive_api_json" in portal_cgi and "generate_204" in portal_cgi and "Microsoft NCSI" in portal_cgi)
+    ok("Portal records and parses User-Agent metadata", "record_client_user_agent" in portal_cgi and "parse_user_agent" in portal_cgi and "ua_summary" in portal_cgi)
     ok("Init advertises RFC8910 DHCP/RA options and cleans them", "dhcp-option=114" in init_script and "captive_portal_uri" in init_script and "cleanup_captive_portal_advertisement" in init_script)
     ok("Runtime events are written to app log", "LOG_FILE=\"/var/log/wifidog_v3.log\"" in init_script and "append_runtime_log" in controller and "append_runtime_log" in portal_cgi)
     empty_authorized = router_lua('''
@@ -409,6 +444,7 @@ local c = require "luci.controller.wifidog_v3"
 c.action_export_config()
 ''')
     ok("Export config includes device notes", "wifidog_v3" in export_config.stdout and "门口手机" in export_config.stdout and "devices" in export_config.stdout, export_config.stdout + export_config.stderr)
+    ok("Export config includes User-Agent metadata", "ua_summary" in export_config.stdout and "user_agent" in export_config.stdout, export_config.stdout + export_config.stderr)
     remove_whitelist = router_lua('''
 local http = require "luci.http"
 local values = { mac = "DE:AD:BE:EF:67:68" }
