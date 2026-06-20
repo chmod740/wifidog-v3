@@ -59,7 +59,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 输出：
 
 ```text
-dist/luci-app-wifidog-v3_1.0.1-1_all.ipk
+dist/luci-app-wifidog-v3_1.0.2-1_all.ipk
 ```
 
 构建 OpenWrt 25 APK：
@@ -71,28 +71,28 @@ dist/luci-app-wifidog-v3_1.0.1-1_all.ipk
 输出：
 
 ```text
-dist/openwrt25/luci-app-wifidog-v3-1.0.1-r1.apk
+dist/openwrt25/luci-app-wifidog-v3-1.0.2-r1.apk
 ```
 
 ## 安装
 
 最新发布包：
 
-- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.1>
-- IPK：`luci-app-wifidog-v3_1.0.1-1_all.ipk`
-- APK：`luci-app-wifidog-v3-1.0.1-r1.apk`
+- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.2>
+- IPK：`luci-app-wifidog-v3_1.0.2-1_all.ipk`
+- APK：`luci-app-wifidog-v3-1.0.2-r1.apk`
 
 OpenWrt 23/24：
 
 ```sh
 opkg update
-opkg install /tmp/luci-app-wifidog-v3_1.0.1-1_all.ipk
+opkg install /tmp/luci-app-wifidog-v3_1.0.2-1_all.ipk
 ```
 
 OpenWrt 25：
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.1-r1.apk
+apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.2-r1.apk
 ```
 
 安装后进入 LuCI：

@@ -3,7 +3,7 @@
 set -e
 
 PKG_NAME="luci-app-wifidog-v3"
-PKG_VERSION="1.0.1"
+PKG_VERSION="1.0.2"
 PKG_RELEASE="1"
 PKG_ARCH="all"
 PKG_MAINTAINER="WiFiDog V3 Team"

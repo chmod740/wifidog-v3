@@ -151,6 +151,47 @@ local function json_escape(s)
 	return s
 end
 
+local function format_duration(seconds)
+	seconds = tonumber(seconds or "0") or 0
+	if seconds < 1 then
+		return ""
+	end
+	local days = math.floor(seconds / 86400)
+	local hours = math.floor((seconds % 86400) / 3600)
+	local minutes = math.floor((seconds % 3600) / 60)
+	if seconds % 60 > 0 and minutes < 59 then
+		minutes = minutes + 1
+	end
+	if days > 0 then
+		if hours > 0 then
+			return tostring(days) .. "天" .. tostring(hours) .. "小时"
+		end
+		return tostring(days) .. "天"
+	end
+	if hours > 0 then
+		if minutes > 0 then
+			return tostring(hours) .. "小时" .. tostring(minutes) .. "分钟"
+		end
+		return tostring(hours) .. "小时"
+	end
+	return tostring(math.max(1, minutes)) .. "分钟"
+end
+
+local function auth_success_json(redirect_url, expiry, valid_seconds)
+	expiry = tonumber(expiry or "0") or 0
+	valid_seconds = tonumber(valid_seconds or "0") or 0
+	local expires_at_text = ""
+	if expiry > 0 then
+		expires_at_text = os.date("%Y-%m-%d %H:%M:%S", expiry)
+	end
+	return '{"success":true,"message":"认证成功","wait_seconds":3,"api_url":"/captive-portal/api","completion_url":"http://captive.apple.com/hotspot-detect.html","redirect":"'
+		.. json_escape(redirect_url or "")
+		.. '","expires_at":' .. tostring(expiry)
+		.. ',"expires_at_text":"' .. json_escape(expires_at_text)
+		.. '","valid_seconds":' .. tostring(valid_seconds)
+		.. ',"valid_text":"' .. json_escape(format_duration(valid_seconds)) .. '"}'
+end
+
 local function html_escape(s)
 	s = tostring(s or "")
 	s = s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"):gsub("'", "&#39;")
@@ -958,7 +999,7 @@ local function authorize_client(mac, ip, source, auth_code, auth_minutes, auth_s
 	remember_ip_session(ip, mac, expiry)
 	append_runtime_log("自助认证成功 MAC=" .. mac:upper() .. " IP=" .. tostring(ip or "") .. " 方式=" .. auth_source .. " 有效秒数=" .. tostring(timeout))
 	reload_firewall()
-	return true
+	return true, expiry, timeout
 end
 
 local function read_body()
@@ -1242,6 +1283,12 @@ local function portal_html(redirect_url, error_msg)
 		}
 		.error { color: #b91c1c; background: #fee2e2; }
 		.success { color: #166534; background: #dcfce7; }
+		.validity {
+			margin: -4px 0 16px;
+			text-align: center;
+			font-size: 13px;
+			line-height: 1.6;
+		}
 		.info {
 			margin-top: 16px;
 			padding: 12px;
@@ -1342,9 +1389,17 @@ local function portal_html(redirect_url, error_msg)
 		function showSuccess(data) {
 			var seconds = parseInt((data && data.wait_seconds) || '3', 10);
 			if (!seconds || seconds < 1) seconds = 3;
-			document.body.innerHTML = '<div class="container"><h1>认证成功</h1><p class="subtitle">正在确认网络状态，预计 <span id="countdown">' + seconds + '</span> 秒内关闭认证窗口。</p><div class="message success" id="success-message">已提交认证，请稍候...</div></div>';
+			document.body.innerHTML = '<div class="container"><h1>认证成功</h1><p class="subtitle">正在确认网络状态，预计 <span id="countdown">' + seconds + '</span> 秒内关闭认证窗口。</p><div class="message success" id="success-message">已提交认证，请稍候...</div><p class="validity" id="auth-validity" hidden></p></div>';
 			var countdown = document.getElementById('countdown');
 			var successMessage = document.getElementById('success-message');
+			var validity = document.getElementById('auth-validity');
+			var validParts = [];
+			if (data && data.valid_text) validParts.push('有效期：' + data.valid_text);
+			if (data && data.expires_at_text) validParts.push('有效期至：' + data.expires_at_text);
+			if (validity && validParts.length) {
+				validity.textContent = validParts.join('，');
+				validity.removeAttribute('hidden');
+			}
 			var timer = window.setInterval(function() {
 				seconds -= 1;
 				if (countdown) countdown.textContent = String(Math.max(seconds, 0));
@@ -1514,8 +1569,8 @@ local function handle()
 							json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
 							return
 						end
-						authorize_client(client_mac, client_ip, "radius", radius_user, "", session_timeout)
-						json_response('{"success":true,"message":"认证成功","wait_seconds":3,"api_url":"/captive-portal/api","completion_url":"http://captive.apple.com/hotspot-detect.html","redirect":"' .. json_escape(form.redirect_url or "") .. '"}')
+						local _, expiry, valid_seconds = authorize_client(client_mac, client_ip, "radius", radius_user, "", session_timeout)
+						json_response(auth_success_json(form.redirect_url or "", expiry, valid_seconds))
 						return
 					end
 					append_runtime_log("RADIUS认证失败 MAC=" .. tostring(client_mac or "") .. " IP=" .. tostring(client_ip or "") .. " 用户=" .. clean_text(form.radius_username or "", 128) .. " 原因=" .. tostring(message or ""))
@@ -1540,8 +1595,8 @@ local function handle()
 						json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
 						return
 					end
-					authorize_client(client_mac, client_ip, "code", used_code, auth_minutes)
-					json_response('{"success":true,"message":"认证成功","wait_seconds":3,"api_url":"/captive-portal/api","completion_url":"http://captive.apple.com/hotspot-detect.html","redirect":"' .. json_escape(form.redirect_url or "") .. '"}')
+					local _, expiry, valid_seconds = authorize_client(client_mac, client_ip, "code", used_code, auth_minutes)
+					json_response(auth_success_json(form.redirect_url or "", expiry, valid_seconds))
 					return
 				end
 				append_runtime_log("授权码认证失败 MAC=" .. tostring(client_mac or "") .. " IP=" .. tostring(client_ip or "") .. " 原因=" .. tostring(message or ""))

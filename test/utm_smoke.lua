@@ -186,6 +186,7 @@ expect("portal has short ip session fallback", portal:find("IP_SESSION_FILE", 1,
 expect("portal implements captive api and legacy probes", portal:find("application/captive+json", 1, true) ~= nil and portal:find("generate_204", 1, true) ~= nil and portal:find("Microsoft NCSI", 1, true) ~= nil)
 expect("portal supports configurable themes and copy", portal:find("portal_theme_css", 1, true) ~= nil and portal:find("portal_prompt", 1, true) ~= nil and portal:find("portal_button_text", 1, true) ~= nil)
 expect("portal supports per-code auth duration", portal:find("effective_auth_seconds", 1, true) ~= nil and portal:find("auth_minutes", 1, true) ~= nil)
+expect("portal success displays auth validity", portal:find("auth-validity", 1, true) ~= nil and portal:find("expires_at_text", 1, true) ~= nil and portal:find("有效期至", 1, true) ~= nil)
 expect("portal supports radius auth", portal:find("radius_authenticate", 1, true) ~= nil and portal:find("session_timeout", 1, true) ~= nil and portal:find("auth_method", 1, true) ~= nil)
 expect("portal records and parses ua", portal:find("record_client_user_agent", 1, true) ~= nil and portal:find("parse_user_agent", 1, true) ~= nil and portal:find("ua_summary", 1, true) ~= nil)
 

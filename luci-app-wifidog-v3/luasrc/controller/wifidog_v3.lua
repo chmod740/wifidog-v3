@@ -340,6 +340,32 @@ local function normalize_auth_minutes(value)
 	return tostring(minutes), nil
 end
 
+local function format_duration(seconds)
+	seconds = tonumber(seconds or "0") or 0
+	if seconds < 1 then
+		return ""
+	end
+	local days = math.floor(seconds / 86400)
+	local hours = math.floor((seconds % 86400) / 3600)
+	local minutes = math.floor((seconds % 3600) / 60)
+	if seconds % 60 > 0 and minutes < 59 then
+		minutes = minutes + 1
+	end
+	if days > 0 then
+		if hours > 0 then
+			return tostring(days) .. "天" .. tostring(hours) .. "小时"
+		end
+		return tostring(days) .. "天"
+	end
+	if hours > 0 then
+		if minutes > 0 then
+			return tostring(hours) .. "小时" .. tostring(minutes) .. "分钟"
+		end
+		return tostring(hours) .. "小时"
+	end
+	return tostring(math.max(1, minutes)) .. "分钟"
+end
+
 local function auth_code_exists(code)
 	local target = tostring(code or ""):upper()
 	local out = sys.exec("uci -q show wifidog_v3 2>/dev/null") or ""
@@ -1495,8 +1521,10 @@ function action_portal()
 		local valid, message, used_code, auth_minutes = validate_auth_code(auth_code, client_mac)
 		if valid then
 			-- Authorize the device
-			authorize_client(client_mac, client_ip, used_code, auth_minutes)
+			local expiry, auth_timeout = authorize_client(client_mac, client_ip, used_code, auth_minutes)
 			reload_firewall()
+			local valid_text = format_duration((auth_timeout or 0) * 60)
+			local expiry_text = expiry and os.date("%Y-%m-%d %H:%M:%S", expiry) or ""
 
 			http.prepare_content("text/html; charset=utf-8")
 			http.write([[
@@ -1505,6 +1533,8 @@ function action_portal()
 <head><meta charset="utf-8"><title>认证成功</title></head>
 <body>
 <h2>认证成功！</h2>
+]] .. (valid_text ~= "" and ("<p>有效期：" .. valid_text .. "</p>\n") or "") .. [[
+]] .. (expiry_text ~= "" and ("<p>有效期至：" .. expiry_text .. "</p>\n") or "") .. [[
 <p>您现在可以正常访问网络了，本页面将在 3 秒后尝试自动关闭。</p>
 <script>setTimeout(function(){ try { window.open('', '_self'); window.close(); } catch (e) {} }, 3000);</script>
 </body>
@@ -1719,4 +1749,5 @@ function authorize_client(mac, ip, auth_code, auth_minutes)
 		created = tostring(os.time())
 	})
 	uci:commit("wifidog_v3")
+	return expiry, auth_timeout
 end

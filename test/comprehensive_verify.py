@@ -502,7 +502,7 @@ def test_client_simulation():
 def test_ipk_package():
     section("11. IPK安装包验证")
 
-    ipk_path = "dist/luci-app-wifidog-v3_1.0.1-1_all.ipk"
+    ipk_path = "dist/luci-app-wifidog-v3_1.0.2-1_all.ipk"
     if not os.path.exists(ipk_path):
         verdict("11.0", "IPK文件存在", False, f"{ipk_path} not found")
         return

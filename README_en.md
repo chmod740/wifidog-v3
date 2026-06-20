@@ -60,7 +60,7 @@ Build the OpenWrt 23/24 IPK:
 Output:
 
 ```text
-dist/luci-app-wifidog-v3_1.0.1-1_all.ipk
+dist/luci-app-wifidog-v3_1.0.2-1_all.ipk
 ```
 
 Build the OpenWrt 25 APK:
@@ -72,28 +72,28 @@ Build the OpenWrt 25 APK:
 Output:
 
 ```text
-dist/openwrt25/luci-app-wifidog-v3-1.0.1-r1.apk
+dist/openwrt25/luci-app-wifidog-v3-1.0.2-r1.apk
 ```
 
 ## Install
 
 Latest release packages:
 
-- Release: <https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.1>
-- IPK: `luci-app-wifidog-v3_1.0.1-1_all.ipk`
-- APK: `luci-app-wifidog-v3-1.0.1-r1.apk`
+- Release: <https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.2>
+- IPK: `luci-app-wifidog-v3_1.0.2-1_all.ipk`
+- APK: `luci-app-wifidog-v3-1.0.2-r1.apk`
 
 OpenWrt 23/24:
 
 ```sh
 opkg update
-opkg install /tmp/luci-app-wifidog-v3_1.0.1-1_all.ipk
+opkg install /tmp/luci-app-wifidog-v3_1.0.2-1_all.ipk
 ```
 
 OpenWrt 25:
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.1-r1.apk
+apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.2-r1.apk
 ```
 
 After installation, open LuCI:

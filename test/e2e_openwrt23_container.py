@@ -162,7 +162,8 @@ EOF
 
     dsh(ROUTER, f"uci -q delete wifidog_v3.{mac.replace(':', '_').lower()} 2>/dev/null; uci -q delete wifidog_v3.{mac.replace(':', '_').upper()} 2>/dev/null; uci -q commit wifidog_v3")
 
-    batch = """
+    today = time.strftime("%Y-%m-%d")
+    batch = f"""
 set wifidog_v3.settings.enabled=1
 set wifidog_v3.settings.lan_interface=eth0
 set wifidog_v3.settings.wan_interface=eth1
@@ -183,21 +184,21 @@ set wifidog_v3.auth_VIP2026.max_uses=20
 set wifidog_v3.auth_VIP2026.used_count=0
 set wifidog_v3.auth_VIP2026.expiry_days=30
 set wifidog_v3.auth_VIP2026.auth_minutes=5
-set wifidog_v3.auth_VIP2026.created_date=2026-05-18
+set wifidog_v3.auth_VIP2026.created_date={today}
 set wifidog_v3.auth_VIP2026.enabled=1
 set wifidog_v3.auth_DEFAULT=authcode
 set wifidog_v3.auth_DEFAULT.code=DEFAULT1440
 set wifidog_v3.auth_DEFAULT.max_uses=20
 set wifidog_v3.auth_DEFAULT.used_count=0
 set wifidog_v3.auth_DEFAULT.expiry_days=30
-set wifidog_v3.auth_DEFAULT.created_date=2026-05-18
+set wifidog_v3.auth_DEFAULT.created_date={today}
 set wifidog_v3.auth_DEFAULT.enabled=1
 set wifidog_v3.auth_ONCE=authcode
 set wifidog_v3.auth_ONCE.code=ONCE123
 set wifidog_v3.auth_ONCE.max_uses=1
 set wifidog_v3.auth_ONCE.used_count=1
 set wifidog_v3.auth_ONCE.expiry_days=30
-set wifidog_v3.auth_ONCE.created_date=2026-05-18
+set wifidog_v3.auth_ONCE.created_date={today}
 set wifidog_v3.auth_ONCE.enabled=1
 set wifidog_v3.auth_EXPIRED=authcode
 set wifidog_v3.auth_EXPIRED.code=EXPIRED1
@@ -211,7 +212,7 @@ set wifidog_v3.auth_DISABLED.code=DISABLED1
 set wifidog_v3.auth_DISABLED.max_uses=20
 set wifidog_v3.auth_DISABLED.used_count=0
 set wifidog_v3.auth_DISABLED.expiry_days=30
-set wifidog_v3.auth_DISABLED.created_date=2026-05-18
+set wifidog_v3.auth_DISABLED.created_date={today}
 set wifidog_v3.auth_DISABLED.enabled=0
 commit wifidog_v3
 """
@@ -346,6 +347,7 @@ c.action_remove_device()
     ok("Package depends on uhttpd and luasocket for portal/RADIUS", "uhttpd" in build_script and "luasocket" in build_script and "+uhttpd" in makefile and "+luasocket" in makefile)
     ok("Portal implements configurable themes and copy", "portal_theme_css" in portal_cgi and "portal_title" in portal_cgi and "portal_prompt" in portal_cgi and "portal_button_text" in portal_cgi)
     ok("Portal success polls captive API before iOS close fallback", "认证成功" in portal_cgi and "pollCaptiveApi" in portal_cgi and "captive.apple.com/hotspot-detect.html" in portal_cgi and "window.close" in portal_cgi and "window.location.replace" not in portal_cgi)
+    ok("Portal success page displays authorization validity", "auth-validity" in portal_cgi and "有效期至" in portal_cgi and "expires_at_text" in portal_cgi and "valid_text" in portal_cgi)
     ok("Portal keeps short IP session cache for captive re-probes", "IP_SESSION_FILE" in portal_cgi and "remember_ip_session" in portal_cgi and "resolve_client_device" in portal_cgi)
     ok("Portal implements RFC8908 API and legacy probe success", "application/captive+json" in portal_cgi and "captive_api_json" in portal_cgi and "generate_204" in portal_cgi and "Microsoft NCSI" in portal_cgi)
     ok("Portal records and parses User-Agent metadata", "record_client_user_agent" in portal_cgi and "parse_user_agent" in portal_cgi and "ua_summary" in portal_cgi)
@@ -507,7 +509,7 @@ c.action_generate_code()
     ok("Admin auth code generation endpoint stores per-code duration", gen.returncode == 0 and "success:" in gen.stdout and generated and generated_duration, gen.stdout + gen.stderr)
 
     auth = client_post(PORTAL_URL, "action=auth&auth_code=VIP2026&redirect_url=http://10.89.0.10/")
-    ok("Auth code accepted", '"success":true' in auth.stdout and '"wait_seconds":3' in auth.stdout and '"redirect":"http://10.89.0.10/"' in auth.stdout, auth.stdout)
+    ok("Auth code accepted", '"success":true' in auth.stdout and '"wait_seconds":3' in auth.stdout and '"redirect":"http://10.89.0.10/"' in auth.stdout and '"expires_at":' in auth.stdout and '"expires_at_text":' in auth.stdout and '"valid_text":"5分钟"' in auth.stdout, auth.stdout)
     time.sleep(0.5)
     code_source = dsh(ROUTER, f"uci -q get wifidog_v3.{mac.replace(':', '_').lower()}.auth_source").stdout.strip()
     ok("Self-service auth source recorded", code_source == "code", code_source)
