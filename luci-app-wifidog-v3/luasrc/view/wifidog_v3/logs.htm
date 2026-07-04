@@ -1,28 +1,6 @@
 <%
-local csrf_token = select(2, pcall(function() return luci.dispatcher.context.requesttoken end)) or select(2, pcall(function() return luci.dispatcher.context.token end)) or ''
+local csrf_token = select(2, pcall(function() return luci.dispatcher.context.authtoken end)) or select(2, pcall(function() return luci.dispatcher.context.requesttoken end)) or select(2, pcall(function() return luci.dispatcher.context.token end)) or ''
 local script = [[
-<style>
-.wifidog-log-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
-.wifidog-log-toolbar label { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
-.wifidog-log-toolbar select,
-.wifidog-log-toolbar input { min-height: 30px; }
-.wifidog-log-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 5px 12px; border: 1px solid #c7d0d9; border-radius: 4px; background: #f8fafc; color: #1f2937; cursor: pointer; }
-.wifidog-log-btn:hover { background: #eef2f7; }
-.wifidog-log-danger { border-color: #ef4444; color: #b91c1c; }
-.wifidog-log-meta { color: #6b7280; margin: 8px 0; }
-.wifidog-log-output { min-height: 420px; max-height: 68vh; overflow: auto; background: #111827; color: #e5e7eb; border-radius: 6px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
-.wifidog-log-empty { color: #9ca3af; }
-.wifidog-log-source { color: #93c5fd; margin-right: 8px; }
-.wifidog-log-error { color: #b91c1c; margin: 8px 0; }
-@media (max-width: 700px) {
-	.wifidog-log-toolbar { align-items: stretch; }
-	.wifidog-log-toolbar label,
-	.wifidog-log-toolbar select,
-	.wifidog-log-toolbar input,
-	.wifidog-log-toolbar button { width: 100%; }
-}
-</style>
-
 <div class="wifidog-log-toolbar">
 	<label>来源
 		<select id="log-source">
@@ -42,9 +20,9 @@ local script = [[
 	<label>关键词
 		<input id="log-query" type="search" maxlength="80" placeholder="按关键词筛选">
 	</label>
-	<button id="refresh-logs" type="button" class="wifidog-log-btn">刷新</button>
-	<button id="toggle-auto" type="button" class="wifidog-log-btn">暂停自动刷新</button>
-	<button id="clear-logs" type="button" class="wifidog-log-btn wifidog-log-danger">清空本系统日志</button>
+	<button id="refresh-logs" type="button" class="wifidog-btn">刷新</button>
+	<button id="toggle-auto" type="button" class="wifidog-btn">暂停自动刷新</button>
+	<button id="clear-logs" type="button" class="wifidog-btn wifidog-btn-danger">清空本系统日志</button>
 </div>
 
 <div id="log-message" class="wifidog-log-meta">正在加载运行日志...</div>
@@ -138,7 +116,7 @@ function resetTimer() {
 	}, 5000);
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+function initLogsPage() {
 	document.getElementById('refresh-logs').addEventListener('click', loadLogs);
 	document.getElementById('clear-logs').addEventListener('click', clearLogs);
 	document.getElementById('toggle-auto').addEventListener('click', function() {
@@ -152,9 +130,17 @@ document.addEventListener('DOMContentLoaded', function() {
 	});
 	loadLogs();
 	resetTimer();
-});
+}
+
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', initLogsPage);
+} else {
+	initLogsPage();
+}
 </script>
 ]]
 %>
+
+<%+wifidog_v3/styles%>
 
 <% write(script) %>

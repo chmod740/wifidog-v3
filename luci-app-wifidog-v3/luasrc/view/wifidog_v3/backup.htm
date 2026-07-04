@@ -1,29 +1,11 @@
 <%
-local style = [[
-<style>
-.wifidog-backup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 12px; }
-.wifidog-panel { border: 1px solid #ddd; border-radius: 6px; padding: 16px; background: #fff; }
-.wifidog-panel h4 { margin-top: 0; margin-bottom: 10px; }
-.wifidog-panel p { color: #666; line-height: 1.6; margin: 0 0 12px; }
-.wifidog-btn { padding: 7px 16px; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
-.wifidog-btn-primary { background: #2196F3; color: white; border-color: #2196F3; }
-.wifidog-btn-warning { background: #ff9800; color: white; border-color: #ff9800; }
-.wifidog-btn-secondary { background: #607d8b; color: white; border-color: #607d8b; }
-.wifidog-msg { padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }
-.wifidog-msg-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-.wifidog-msg-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-.wifidog-file { display: block; margin: 10px 0; }
-.wifidog-textarea { width: 100%; min-height: 190px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px; box-sizing: border-box; }
-</style>
-]]
-
 local function csrf_token()
 	local ok, dispatcher = pcall(require, "luci.dispatcher")
 	local ctx = ok and dispatcher and dispatcher.context or nil
 	if not ctx and luci and luci.dispatcher then
 		ctx = luci.dispatcher.context
 	end
-	return (ctx and (ctx.requesttoken or ctx.token)) or ""
+	return (ctx and (ctx.authtoken or ctx.requesttoken or ctx.token)) or ""
 end
 
 local csrf_token = csrf_token()
@@ -90,23 +72,29 @@ function importConfig() {
 	});
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+function initBackupPage() {
 	var fileInput = document.getElementById('backup-file');
 	fileInput.addEventListener('change', function() {
 		if (fileInput.files && fileInput.files[0]) readBackupFile(fileInput.files[0]);
 	});
-});
+}
+
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', initBackupPage);
+} else {
+	initBackupPage();
+}
 </script>
 ]]
 %>
 
-<% write(style) %>
+<%+wifidog_v3/styles%>
 
 <div id="wifidog-msg" class="wifidog-msg" style="display:none;"></div>
 
 <div class="cbi-section">
 	<h3><%:配置备份与恢复%></h3>
-	<p><em><%:导出的备份包含系统设置、待授权设备、白名单、黑名单、已授权设备、设备备注和授权码。恢复备份会替换当前这些配置。%></em></p>
+	<p class="wifidog-page-hint"><%:导出的备份包含系统设置、待授权设备、白名单、黑名单、已授权设备、设备备注和授权码。恢复备份会替换当前这些配置。%></p>
 
 	<div class="wifidog-backup-grid">
 		<div class="wifidog-panel">
@@ -120,7 +108,7 @@ document.addEventListener('DOMContentLoaded', function() {
 			<p><%:选择之前导出的 JSON 备份文件，或直接粘贴备份内容后执行恢复。%></p>
 			<input class="wifidog-file" type="file" id="backup-file" accept=".json,application/json">
 			<textarea id="backup-json" class="wifidog-textarea" placeholder="请粘贴 WiFiDog V3 备份 JSON 内容"></textarea>
-			<div style="margin-top:12px;">
+			<div class="wifidog-actions">
 				<button type="button" class="wifidog-btn wifidog-btn-warning" onclick="importConfig()"><%:恢复配置%></button>
 				<button type="button" class="wifidog-btn wifidog-btn-secondary" onclick="document.getElementById('backup-json').value=''"><%:清空内容%></button>
 			</div>

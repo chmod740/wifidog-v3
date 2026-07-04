@@ -1165,7 +1165,7 @@ function action_scan_devices()
 
 	http.prepare_content("application/json")
 	if #devices > 0 then
-	http.write_json({ success = true, devices = devices })
+		http.write_json({ success = true, devices = devices })
 	else
 		http.write('{"success":true,"devices":[]}')
 	end

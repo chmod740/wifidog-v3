@@ -1,8 +1,13 @@
 <%
-local csrf_token = select(2, pcall(function() return luci.dispatcher.context.requesttoken end)) or select(2, pcall(function() return luci.dispatcher.context.token end)) or ''
+local csrf_token = select(2, pcall(function() return luci.dispatcher.context.authtoken end)) or select(2, pcall(function() return luci.dispatcher.context.requesttoken end)) or select(2, pcall(function() return luci.dispatcher.context.token end)) or ''
 local script = [[
 <script>
 var statusUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/status") .. [[';
+
+function statusItem(label, text, ok) {
+	return '<div class="wifidog-status-item"><span class="wifidog-status-label">' + label + '</span>' +
+		'<span class="wifidog-badge ' + (ok ? 'wifidog-badge-ok' : 'wifidog-badge-error') + '">' + text + '</span></div>';
+}
 
 function updateStatus() {
 	var el = document.getElementById('wifidog_status');
@@ -15,31 +20,42 @@ function updateStatus() {
 		if (data.enabled) {
 			var nftOk = data.nft !== undefined ? data.nft : data.running;
 			var portalOk = data.portal !== undefined ? data.portal : data.running;
-			html += '<p><strong>]] .. translate("系统状态：") .. [[</strong> <span style="color:green;">]] .. translate("已启用") .. [[</span></p>';
-			html += '<p><strong>]] .. translate("防火墙规则：") .. [[</strong> <span style="color:' + (nftOk ? 'green' : 'red') + ';">' + (nftOk ? ']] .. translate("运行中") .. [[' : ']] .. translate("未运行") .. [[') + '</span></p>';
-			html += '<p><strong>]] .. translate("Portal服务：") .. [[</strong> <span style="color:' + (portalOk ? 'green' : 'red') + ';">' + (portalOk ? ']] .. translate("运行中") .. [[' : ']] .. translate("未运行") .. [[') + '</span></p>';
+			html += '<div class="wifidog-status-grid">';
+			html += statusItem(']] .. translate("系统状态") .. [[', ']] .. translate("已启用") .. [[', true);
+			html += statusItem(']] .. translate("防火墙规则") .. [[', nftOk ? ']] .. translate("运行中") .. [[' : ']] .. translate("未运行") .. [[', nftOk);
+			html += statusItem(']] .. translate("Portal服务") .. [[', portalOk ? ']] .. translate("运行中") .. [[' : ']] .. translate("未运行") .. [[', portalOk);
+			html += '</div>';
 		} else {
-			html += '<p><strong>]] .. translate("系统状态：") .. [[</strong> <span style="color:red;">]] .. translate("已禁用") .. [[</span></p>';
-			html += '<p><em>]] .. translate("请在基本设置中启用系统") .. [[</em></p>';
+			html += '<div class="wifidog-status-grid">';
+			html += statusItem(']] .. translate("系统状态") .. [[', ']] .. translate("已禁用") .. [[', false);
+			html += '</div><p class="wifidog-page-hint">]] .. translate("请在基本设置中启用系统") .. [[</p>';
 		}
 		el.innerHTML = html;
 	})
 	.catch(function() {
 		var el = document.getElementById('wifidog_status');
-		if (el) el.innerHTML = '<p style="color:red;">]] .. translate("无法获取状态信息") .. [[</p>';
+		if (el) el.innerHTML = '<div class="wifidog-msg wifidog-msg-error" style="display:block;">]] .. translate("无法获取状态信息") .. [[</div>';
 	});
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+function initStatusPage() {
 	updateStatus();
 	setInterval(updateStatus, 5000);
-});
+}
+
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', initStatusPage);
+} else {
+	initStatusPage();
+}
 </script>
 ]]
 %>
 
+<%+wifidog_v3/styles%>
+
 <div id="wifidog_status">
-	<p><em><%:正在获取状态信息...%></em></p>
+	<p class="wifidog-page-hint"><%:正在获取状态信息...%></p>
 </div>
 
 <% write(script) %>

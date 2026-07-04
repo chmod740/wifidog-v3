@@ -96,6 +96,15 @@ def client_mac() -> str:
     raise RuntimeError("client LAN MAC not found")
 
 
+def router_iface_for_ip(ip: str, fallback: str) -> str:
+    out = dsh(ROUTER, "ip -o -4 addr show").stdout
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[3].split("/", 1)[0] == ip:
+            return parts[1]
+    return fallback
+
+
 def start_radius() -> None:
     conf_dir = Path("/tmp/wifidog_v3_radius")
     conf_dir.mkdir(parents=True, exist_ok=True)
@@ -146,14 +155,17 @@ def setup(mac: str) -> None:
     dexec(WAN, "killall", "uhttpd")
     run(["docker", "exec", "-d", WAN, "uhttpd", "-f", "-p", "0.0.0.0:80", "-h", "/www"])
 
-    network_cfg = """cat > /etc/config/network <<'EOF'
+    lan_iface = router_iface_for_ip("10.88.0.2", "eth0")
+    wan_iface = router_iface_for_ip("10.89.0.2", "eth1")
+
+    network_cfg = f"""cat > /etc/config/network <<'EOF'
 config interface 'lan'
-	option device 'eth0'
+	option device '{lan_iface}'
 	option ipaddr '10.88.0.2'
 	option netmask '255.255.255.0'
 
 config interface 'wan'
-	option device 'eth1'
+	option device '{wan_iface}'
 	option ipaddr '10.89.0.2'
 	option netmask '255.255.255.0'
 EOF
@@ -165,8 +177,8 @@ EOF
     today = time.strftime("%Y-%m-%d")
     batch = f"""
 set wifidog_v3.settings.enabled=1
-set wifidog_v3.settings.lan_interface=eth0
-set wifidog_v3.settings.wan_interface=eth1
+set wifidog_v3.settings.lan_interface={lan_iface}
+set wifidog_v3.settings.wan_interface={wan_iface}
 set wifidog_v3.settings.portal_port=8080
 set wifidog_v3.settings.lan_subnet=10.88.0.0/24
 set wifidog_v3.settings.auth_code_enabled=1
@@ -217,7 +229,7 @@ set wifidog_v3.auth_DISABLED.enabled=0
 commit wifidog_v3
 """
     dexec(ROUTER, "uci", "batch", input_text=batch, check=True)
-    dsh(ROUTER, "nft add table ip wifidog_v3_test 2>/dev/null || true; nft 'add chain ip wifidog_v3_test postrouting { type nat hook postrouting priority 100; policy accept; }' 2>/dev/null || true; nft add rule ip wifidog_v3_test postrouting ip saddr 10.88.0.0/24 oifname eth1 masquerade 2>/dev/null || true")
+    dsh(ROUTER, f"nft add table ip wifidog_v3_test 2>/dev/null || true; nft 'add chain ip wifidog_v3_test postrouting {{ type nat hook postrouting priority 100; policy accept; }}' 2>/dev/null || true; nft add rule ip wifidog_v3_test postrouting ip saddr 10.88.0.0/24 oifname {wan_iface} masquerade 2>/dev/null || true")
     dexec(CLIENT, "ip", "route", "replace", "default", "via", "10.88.0.2", "dev", "eth0", check=True)
     dexec(CLIENT, "ping", "-c", "1", "10.88.0.2", check=True)
     dexec(ROUTER, "/etc/init.d/wifidog_v3", "restart", check=True)
@@ -331,6 +343,21 @@ c.action_remove_device()
     ok("Device pages display parsed User-Agent information", "设备信息" in devices_view and "addDeviceInfoCell" in devices_view and "ua_summary" in devices_view)
     ok("Auto refresh skips active or unsaved notes", "setInterval(autoRefresh, 15000)" in devices_view and "isEditingNote()" in devices_view and "hasUnsavedNote()" in devices_view)
     ok("Authorized devices can move to whitelist/blacklist", devices_view.count("addWhitelist(dev.mac") >= 2 and devices_view.count("addBlacklist(dev.mac") >= 2)
+    shared_style = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/view/wifidog_v3/styles.htm").read_text()
+    styled_views = [
+        "devices.htm",
+        "whitelist.htm",
+        "blacklist.htm",
+        "auth_codes.htm",
+        "backup.htm",
+        "logs.htm",
+        "status.htm",
+    ]
+    shared_style_refs = [
+        (REPO_ROOT / f"luci-app-wifidog-v3/luasrc/view/wifidog_v3/{name}").read_text()
+        for name in styled_views
+    ]
+    ok("LuCI pages share common polished styles", all("<%+wifidog_v3/styles%>" in text for text in shared_style_refs) and "wifidog-table-wrap" in shared_style and "td.wifidog-actions" in shared_style, shared_style[:300])
     backup_view = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/view/wifidog_v3/backup.htm").read_text()
     logs_view = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/view/wifidog_v3/logs.htm").read_text()
     controller = (REPO_ROOT / "luci-app-wifidog-v3/luasrc/controller/wifidog_v3.lua").read_text()

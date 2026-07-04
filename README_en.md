@@ -8,6 +8,38 @@ WiFiDog V3 is a LuCI network authentication system for OpenWrt. It manages pendi
 
 ![Captive Portal demo](docs/assets/captive-portal-demo.gif)
 
+## LuCI Admin Screenshots
+
+The screenshots below were captured from the actual LuCI pages in a Docker OpenWrt 23.05.6 environment.
+
+### Device Scan
+
+![Device scan](docs/assets/luci/devices.png)
+
+### Whitelist
+
+![Whitelist](docs/assets/luci/whitelist.png)
+
+### Blacklist
+
+![Blacklist](docs/assets/luci/blacklist.png)
+
+### Authorization Codes
+
+![Authorization codes](docs/assets/luci/auth-codes.png)
+
+### Backup And Restore
+
+![Backup and restore](docs/assets/luci/backup.png)
+
+### Runtime Logs
+
+![Runtime logs](docs/assets/luci/logs.png)
+
+### Settings
+
+![Settings](docs/assets/luci/settings.png)
+
 ## Features
 
 - Device discovery from ARP tables and DHCP leases.
@@ -161,7 +193,7 @@ lua /tmp/utm_smoke.lua
 
 Latest regression results:
 
-- Docker OpenWrt 23.05.6: `100 passed, 0 failed`
+- Docker OpenWrt 23.05.6: `107 passed, 0 failed`
 - UTM OpenWrt 23.05.6: install, portal, authorization codes, RADIUS, Passwall2 coexistence, disable, and uninstall cleanup passed
 - UTM OpenWrt 24.10.6: install, portal, authorization codes, RADIUS PAP, `Session-Timeout`, runtime logs, disable, and uninstall cleanup passed
 - UTM OpenWrt 25.12.3: APK install, portal, authorization codes, RADIUS PAP, `Session-Timeout`, runtime logs, disable, and uninstall cleanup passed

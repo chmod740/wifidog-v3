@@ -8,6 +8,38 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 
 ![Captive Portal 功能演示](docs/assets/captive-portal-demo.gif)
 
+## LuCI 管理后台截图
+
+以下截图来自 Docker OpenWrt 23.05.6 环境中的 LuCI 实际页面。
+
+### 网络设备扫描
+
+![网络设备扫描](docs/assets/luci/devices.png)
+
+### 白名单管理
+
+![白名单管理](docs/assets/luci/whitelist.png)
+
+### 黑名单管理
+
+![黑名单管理](docs/assets/luci/blacklist.png)
+
+### 授权码管理
+
+![授权码管理](docs/assets/luci/auth-codes.png)
+
+### 配置备份
+
+![配置备份](docs/assets/luci/backup.png)
+
+### 运行日志
+
+![运行日志](docs/assets/luci/logs.png)
+
+### 系统设置
+
+![系统设置](docs/assets/luci/settings.png)
+
 ## 功能特性
 
 - 网络设备扫描：从 ARP 表和 DHCP leases 中识别内网设备。
@@ -160,7 +192,7 @@ lua /tmp/utm_smoke.lua
 
 最近回归结果：
 
-- Docker OpenWrt 23.05.6：`100 passed, 0 failed`
+- Docker OpenWrt 23.05.6：`107 passed, 0 failed`
 - UTM OpenWrt 23.05.6：安装、Portal、授权码、RADIUS、Passwall2 共存、关闭、卸载清理通过
 - UTM OpenWrt 24.10.6：安装、Portal、授权码、RADIUS PAP、`Session-Timeout`、运行日志、关闭、卸载清理通过
 - UTM OpenWrt 25.12.3：APK 安装、Portal、授权码、RADIUS PAP、`Session-Timeout`、运行日志、关闭、卸载清理通过

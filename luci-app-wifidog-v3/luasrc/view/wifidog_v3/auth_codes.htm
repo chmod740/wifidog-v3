@@ -1,39 +1,14 @@
 <%
-local style = [[
-<style>
-.wifidog-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-.wifidog-table th { background: #f5f5f5; padding: 10px 8px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600; }
-.wifidog-table td { padding: 8px; border-bottom: 1px solid #eee; vertical-align: middle; }
-.wifidog-table tr:hover { background: #fafafa; }
-.wifidog-btn { padding: 4px 12px; margin: 0 2px; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
-.wifidog-btn-primary { background: #2196F3; color: white; border-color: #2196F3; }
-.wifidog-btn-primary:hover { background: #0b7dda; }
-.wifidog-btn-danger { background: #f44336; color: white; border-color: #f44336; }
-.wifidog-btn-danger:hover { background: #da190b; }
-.wifidog-empty { text-align: center; padding: 40px; color: #999; }
-.wifidog-loading { text-align: center; padding: 40px; color: #666; }
-.wifidog-msg { padding: 10px; margin: 10px 0; border-radius: 4px; display: none; }
-.wifidog-msg-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-.wifidog-msg-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-.wifidog-form-group { margin-bottom: 12px; }
-.wifidog-form-group label { display: inline-block; width: 170px; font-weight: 500; }
-.wifidog-form-group input, .wifidog-form-group select { padding: 6px 8px; border: 1px solid #ccc; border-radius: 3px; font-size: 13px; }
-.wifidog-form-hint { margin-left: 174px; margin-top: 4px; color: #777; font-size: 12px; }
-.wifidog-generate-box { background: #f8f9fa; padding: 16px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px; }
-.wifidog-generate-box h4 { margin-top: 0; margin-bottom: 12px; }
-</style>
-]]
-
 local function csrf_token()
 	local ok, dispatcher = pcall(require, "luci.dispatcher")
 	local ctx = ok and dispatcher and dispatcher.context or nil
 	if not ctx and luci and luci.dispatcher then
 		ctx = luci.dispatcher.context
 	end
-	return (ctx and (ctx.requesttoken or ctx.token)) or ""
+	return (ctx and (ctx.authtoken or ctx.requesttoken or ctx.token)) or ""
 end
 
-	local csrf_token = csrf_token()
+local csrf_token = csrf_token()
 local script = [[
 <script>
 var token = ']] .. csrf_token .. [[';
@@ -86,8 +61,8 @@ function loadCodes() {
 			var authMinutes = parseInt(c.auth_minutes, 10);
 			var authMinutesText = authMinutes > 0 ? authMinutes + ' 分钟' : '默认';
 			var statusHtml = c.enabled == '1'
-				? '<span style="color:green;">启用</span>'
-				: '<span style="color:red;">禁用</span>';
+				? '<span class="wifidog-badge wifidog-badge-ok">启用</span>'
+				: '<span class="wifidog-badge wifidog-badge-error">禁用</span>';
 
 			var tr = document.createElement('tr');
 			tr.innerHTML =
@@ -97,7 +72,7 @@ function loadCodes() {
 				'<td>' + c.expiry_days + ' 天</td>' +
 				'<td>' + (c.created_date || '-') + '</td>' +
 				'<td>' + statusHtml + '</td>' +
-				'<td>' +
+				'<td class="wifidog-actions">' +
 					'<button type="button" class="wifidog-btn wifidog-btn-danger" onclick="deleteCode(\'' + c.code + '\')">删除</button>' +
 				'</td>';
 			tbody.appendChild(tr);
@@ -167,12 +142,16 @@ function deleteCode(code) {
 	});
 }
 
-document.addEventListener('DOMContentLoaded', loadCodes);
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', loadCodes);
+} else {
+	loadCodes();
+}
 </script>
 ]]
 %>
 
-<% write(style) %>
+<%+wifidog_v3/styles%>
 
 <div id="wifidog-msg" class="wifidog-msg" style="display:none;"></div>
 
@@ -196,28 +175,30 @@ document.addEventListener('DOMContentLoaded', loadCodes);
 			<label><%:授权码有效期（天）：%></label>
 			<input type="number" id="new-expiry-days" value="30" min="1" max="3650" style="width:100px;">
 		</div>
-		<button type="button" class="wifidog-btn wifidog-btn-primary" style="padding:8px 20px;font-size:14px;" onclick="generateCode()">
+		<button type="button" class="wifidog-btn wifidog-btn-primary" onclick="generateCode()">
 			<%:生成授权码%>
 		</button>
 	</div>
 
 	<h3><%:已生成的授权码%></h3>
 
-	<table class="wifidog-table cbi-section-table">
-		<thead>
-			<tr>
-				<th width="15%"><%:授权码%></th>
-				<th width="15%"><%:已用/总计%></th>
-				<th width="14%"><%:授权时长%></th>
-				<th width="12%"><%:授权码有效期%></th>
-				<th width="15%"><%:创建日期%></th>
-				<th width="10%"><%:状态%></th>
-				<th width="15%"><%:操作%></th>
-			</tr>
-		</thead>
-		<tbody id="codes-tbody">
-		</tbody>
-	</table>
+	<div class="wifidog-table-wrap">
+		<table class="wifidog-table cbi-section-table">
+			<thead>
+				<tr>
+					<th width="15%"><%:授权码%></th>
+					<th width="15%"><%:已用/总计%></th>
+					<th width="14%"><%:授权时长%></th>
+					<th width="12%"><%:授权码有效期%></th>
+					<th width="15%"><%:创建日期%></th>
+					<th width="10%"><%:状态%></th>
+					<th width="15%"><%:操作%></th>
+				</tr>
+			</thead>
+			<tbody id="codes-tbody">
+			</tbody>
+		</table>
+	</div>
 
 	<div id="codes-loading" class="wifidog-loading">
 		<%:正在加载授权码列表...%>
