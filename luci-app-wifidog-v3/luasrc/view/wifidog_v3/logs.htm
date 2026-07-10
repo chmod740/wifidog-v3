@@ -1,32 +1,35 @@
 <%
 local csrf_token = select(2, pcall(function() return luci.dispatcher.context.authtoken end)) or select(2, pcall(function() return luci.dispatcher.context.requesttoken end)) or select(2, pcall(function() return luci.dispatcher.context.token end)) or ''
 local script = [[
-<div class="wifidog-log-toolbar">
-	<label>来源
-		<select id="log-source">
-			<option value="app" selected>本系统日志</option>
-			<option value="syslog">系统日志</option>
-			<option value="all">全部</option>
-		</select>
-	</label>
-	<label>行数
-		<select id="log-lines">
-			<option value="100">100</option>
-			<option value="200" selected>200</option>
-			<option value="500">500</option>
-			<option value="1000">1000</option>
-		</select>
-	</label>
-	<label>关键词
-		<input id="log-query" type="search" maxlength="80" placeholder="按关键词筛选">
-	</label>
-	<button id="refresh-logs" type="button" class="wifidog-btn">刷新</button>
-	<button id="toggle-auto" type="button" class="wifidog-btn">暂停自动刷新</button>
-	<button id="clear-logs" type="button" class="wifidog-btn wifidog-btn-danger">清空本系统日志</button>
-</div>
+<div class="wifidog-shell">
+	<header class="wifidog-page-head">
+		<div class="wifidog-page-head-main">
+			<span class="wifidog-page-kicker">运行诊断</span>
+			<h2 class="wifidog-page-title">运行日志</h2>
+			<p class="wifidog-page-copy">查看认证、设备管理、防火墙和 Portal 服务的实时运行记录。</p>
+		</div>
+		<div class="wifidog-page-meta"><span class="wifidog-badge wifidog-badge-info">每5秒刷新</span></div>
+	</header>
 
-<div id="log-message" class="wifidog-log-meta">正在加载运行日志...</div>
-<div id="log-output" class="wifidog-log-output"><span class="wifidog-log-empty">正在加载...</span></div>
+	<section class="wifidog-panel">
+		<div class="wifidog-panel-head"><div><h3 class="wifidog-panel-title">筛选与操作</h3><p class="wifidog-panel-copy">系统日志为只读，本系统日志可单独清空</p></div></div>
+		<div class="wifidog-panel-body">
+			<div class="wifidog-log-toolbar">
+				<label>来源<select id="log-source"><option value="app" selected>本系统日志</option><option value="syslog">系统日志</option><option value="all">全部</option></select></label>
+				<label>行数<select id="log-lines"><option value="100">100</option><option value="200" selected>200</option><option value="500">500</option><option value="1000">1000</option></select></label>
+				<label class="wifidog-log-search">关键词<input id="log-query" type="search" maxlength="80" placeholder="按关键词筛选"></label>
+				<button id="refresh-logs" type="button" class="wifidog-btn">刷新</button>
+				<button id="toggle-auto" type="button" class="wifidog-btn">暂停自动刷新</button>
+				<button id="clear-logs" type="button" class="wifidog-btn wifidog-btn-danger">清空本系统日志</button>
+			</div>
+		</div>
+	</section>
+
+	<section class="wifidog-panel">
+		<div class="wifidog-panel-head"><h3 class="wifidog-panel-title">日志内容</h3><div id="log-message" class="wifidog-log-meta" aria-live="polite">正在加载运行日志...</div></div>
+		<div id="log-output" class="wifidog-log-output"><span class="wifidog-log-empty">正在加载...</span></div>
+	</section>
+</div>
 
 <script>
 var runtimeLogsUrl = ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/runtime_logs") .. [[';

@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-wifidog-v3
-PKG_VERSION:=1.0.3
+PKG_VERSION:=1.0.4
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=WiFiDog V3 Team
@@ -17,6 +17,10 @@ define Package/$(PKG_NAME)
   TITLE:=WiFiDog V3 Network Authentication System
   PKGARCH:=all
   DEPENDS:=+firewall4 +nftables-json +lua +uhttpd +libuci-lua +luci-compat +luci-lib-jsonc +luasocket
+endef
+
+define Package/$(PKG_NAME)/conffiles
+/etc/config/wifidog_v3
 endef
 
 define Package/$(PKG_NAME)/description
@@ -61,6 +65,10 @@ define Package/$(PKG_NAME)/postinst
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ] && [ -f /etc/uci-defaults/40_luci-wifidog-v3 ]; then
 	( . /etc/uci-defaults/40_luci-wifidog-v3 ) && rm -f /etc/uci-defaults/40_luci-wifidog-v3
+fi
+if [ -f "$${IPKG_INSTROOT}/etc/config/wifidog_v3" ]; then
+	rm -f "$${IPKG_INSTROOT}/etc/config/wifidog_v3-opkg" \
+		"$${IPKG_INSTROOT}/etc/config/wifidog_v3.apk-new"
 fi
 chmod 755 "$${IPKG_INSTROOT}/etc/init.d/wifidog_v3" >/dev/null 2>&1
 chmod 755 "$${IPKG_INSTROOT}/www/wifidog_v3/cgi-bin/wifidog_v3/portal" >/dev/null 2>&1

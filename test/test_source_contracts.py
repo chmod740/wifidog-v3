@@ -49,6 +49,20 @@ class PackagingContracts(unittest.TestCase):
         manual = {item.strip() for item in manual_raw.split(",")}
         self.assertEqual(manual, sdk)
 
+    def test_uci_config_is_protected_during_package_upgrade(self) -> None:
+        sdk_conffiles = block(MAKEFILE, "define Package/$(PKG_NAME)/conffiles", "endef")
+        self.assertIn("/etc/config/wifidog_v3", sdk_conffiles)
+        manual_conffiles = block(
+            BUILD_IPK,
+            'cat > "$BUILD_DIR/control/conffiles"',
+            "# ============================================\n# Step 2",
+        )
+        self.assertIn("/etc/config/wifidog_v3", manual_conffiles)
+        self.assertIn("/etc/config/wifidog_v3-opkg", MAKEFILE)
+        self.assertIn("/etc/config/wifidog_v3-opkg", BUILD_IPK)
+        self.assertIn("/etc/config/wifidog_v3.apk-new", MAKEFILE)
+        self.assertIn("/etc/config/wifidog_v3.apk-new", BUILD_IPK)
+
     def test_forbidden_legacy_nat_packages_are_not_dependencies(self) -> None:
         dependencies = MAKEFILE + BUILD_IPK
         self.assertNotIn("iptables-mod-nat-extra", dependencies)
@@ -234,6 +248,22 @@ class LuCIContracts(unittest.TestCase):
     def test_runtime_log_has_bounded_rotation(self) -> None:
         combined = CONTROLLER + INIT + PORTAL
         self.assertRegex(combined, r"(logrotate|max_log_size|LOG_MAX_BYTES|rotate_runtime_log)")
+
+    def test_management_pages_share_responsive_dashboard_structure(self) -> None:
+        for name in ("devices.htm", "whitelist.htm", "blacklist.htm", "auth_codes.htm", "backup.htm", "logs.htm"):
+            view = (APP / f"luasrc/view/wifidog_v3/{name}").read_text()
+            self.assertIn("wifidog-shell", view, name)
+            self.assertIn("wifidog-page-head", view, name)
+            self.assertIn("wifidog-panel", view, name)
+
+        styles = (APP / "luasrc/view/wifidog_v3/styles.htm").read_text()
+        for marker in ("--wd-surface", "prefers-color-scheme: dark", "max-width: 700px", "overflow-x: auto"):
+            self.assertIn(marker, styles)
+
+    def test_settings_page_loads_shared_styles_without_noop_request(self) -> None:
+        settings = (APP / "luasrc/model/cbi/wifidog_v3/settings.lua").read_text()
+        self.assertIn('m:append(Template("wifidog_v3/styles"))', settings)
+        self.assertNotIn("xhr.open", settings)
 
 
 if __name__ == "__main__":

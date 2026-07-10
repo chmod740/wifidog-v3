@@ -56,6 +56,7 @@ function loadCodes() {
 	.then(function(data) {
 		loading.style.display = 'none';
 		var codes = Array.isArray(data.codes) ? data.codes : [];
+		document.getElementById('codes-count').textContent = codes.length;
 		if (!data.success || codes.length === 0) {
 			empty.style.display = 'block';
 			return;
@@ -87,6 +88,7 @@ function loadCodes() {
 	})
 	.catch(function(err) {
 		loading.style.display = 'none';
+		document.getElementById('codes-count').textContent = '0';
 		showMessage('加载授权码列表失败: ' + err, 'error');
 	});
 }
@@ -168,59 +170,55 @@ if (document.readyState === 'loading') {
 
 <%+wifidog_v3/styles%>
 
-<div id="wifidog-msg" class="wifidog-msg" style="display:none;"></div>
-
-<div class="cbi-section">
-	<div class="wifidog-generate-box">
-		<h4><%:生成新的授权码%></h4>
-		<div class="wifidog-form-group">
-			<label><%:授权码：%></label>
-			<input type="text" id="new-code" placeholder="请输入授权码，如：VIP2024">
+<div class="wifidog-shell">
+	<header class="wifidog-page-head">
+		<div class="wifidog-page-head-main">
+			<span class="wifidog-page-kicker"><%:访客凭证%></span>
+			<h2 class="wifidog-page-title"><%:授权码管理%></h2>
+			<p class="wifidog-page-copy"><%:为访客创建限次、限期的自助认证凭证，并按需设置单次授权时长。%></p>
 		</div>
-		<div class="wifidog-form-group">
-			<label><%:可用次数：%></label>
-			<input type="number" id="new-max-uses" value="1" min="1" max="9999" style="width:100px;">
-		</div>
-		<div class="wifidog-form-group">
-			<label><%:授权后有效时长（分钟）：%></label>
-			<input type="number" id="new-auth-minutes" min="1" max="525600" placeholder="留空使用默认" style="width:140px;">
-			<div class="wifidog-form-hint"><%:留空时使用系统设置里的默认授权时长%></div>
-		</div>
-		<div class="wifidog-form-group">
-			<label><%:授权码有效期（天）：%></label>
-			<input type="number" id="new-expiry-days" value="30" min="1" max="3650" style="width:100px;">
-		</div>
-		<button type="button" class="wifidog-btn wifidog-btn-primary" onclick="generateCode()">
-			<%:生成授权码%>
-		</button>
-	</div>
+		<div class="wifidog-page-meta"><span class="wifidog-badge wifidog-badge-info"><%:Portal 自助认证%></span></div>
+	</header>
+	<div id="wifidog-msg" class="wifidog-msg" style="display:none;" aria-live="polite"></div>
 
-	<h3><%:已生成的授权码%></h3>
+	<section class="wifidog-panel">
+		<div class="wifidog-panel-head">
+			<div><h3 class="wifidog-panel-title"><%:生成授权码%></h3><p class="wifidog-panel-copy"><%:授权时长留空时使用系统设置中的默认值%></p></div>
+		</div>
+		<div class="wifidog-panel-body wifidog-generate-box">
+			<div class="wifidog-form-group"><label for="new-code"><%:授权码%></label><input type="text" id="new-code" placeholder="请输入授权码，如：VIP2024"></div>
+			<div class="wifidog-form-group"><label for="new-max-uses"><%:可用次数%></label><input type="number" id="new-max-uses" value="1" min="1" max="9999"></div>
+			<div class="wifidog-form-group">
+				<label for="new-auth-minutes"><%:授权后有效时长（分钟）%></label>
+				<input type="number" id="new-auth-minutes" min="1" max="525600" placeholder="留空使用默认">
+				<div class="wifidog-form-hint"><%:允许范围 1 至 525600 分钟%></div>
+			</div>
+			<div class="wifidog-form-group"><label for="new-expiry-days"><%:授权码有效期（天）%></label><input type="number" id="new-expiry-days" value="30" min="1" max="3650"></div>
+			<div class="wifidog-actions"><button type="button" class="wifidog-btn wifidog-btn-primary" onclick="generateCode()"><%:生成授权码%></button></div>
+		</div>
+	</section>
 
-	<div class="wifidog-table-wrap">
-		<table class="wifidog-table cbi-section-table">
-			<thead>
-				<tr>
-					<th width="15%"><%:授权码%></th>
-					<th width="15%"><%:已用/总计%></th>
-					<th width="14%"><%:授权时长%></th>
-					<th width="12%"><%:授权码有效期%></th>
-					<th width="15%"><%:创建日期%></th>
-					<th width="10%"><%:状态%></th>
-					<th width="15%"><%:操作%></th>
-				</tr>
-			</thead>
-			<tbody id="codes-tbody">
-			</tbody>
-		</table>
-	</div>
-
-	<div id="codes-loading" class="wifidog-loading">
-		<%:正在加载授权码列表...%>
-	</div>
-	<div id="codes-empty" class="wifidog-empty" style="display:none;">
-		<%:暂未生成任何授权码%>
-	</div>
+	<section class="wifidog-panel">
+		<div class="wifidog-panel-head">
+			<div><h3 class="wifidog-panel-title"><%:已生成的授权码%></h3><p class="wifidog-panel-copy"><%:用量、有效期和单次授权时长%></p></div>
+			<span id="codes-count" class="wifidog-count">0</span>
+		</div>
+		<div class="wifidog-panel-body wifidog-panel-body-flush">
+			<div class="wifidog-table-wrap">
+				<table class="wifidog-table cbi-section-table">
+					<thead><tr>
+						<th width="15%"><%:授权码%></th><th width="15%"><%:已用/总计%></th>
+						<th width="14%"><%:授权时长%></th><th width="12%"><%:授权码有效期%></th>
+						<th width="15%"><%:创建日期%></th><th width="10%"><%:状态%></th>
+						<th width="15%"><%:操作%></th>
+					</tr></thead>
+					<tbody id="codes-tbody"></tbody>
+				</table>
+			</div>
+			<div id="codes-loading" class="wifidog-loading"><%:正在加载授权码列表...%></div>
+			<div id="codes-empty" class="wifidog-empty" style="display:none;"><%:暂未生成任何授权码%></div>
+		</div>
+	</section>
 </div>
 
 <% write(script) %>

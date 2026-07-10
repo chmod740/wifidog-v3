@@ -1,4 +1,24 @@
 <style>
+body[data-page^="admin-services-wifidog_v3"] {
+	--wd-text: #182230;
+	--wd-heading: #101828;
+	--wd-muted: #667085;
+	--wd-surface: #ffffff;
+	--wd-surface-soft: #f8fafc;
+	--wd-surface-raised: #ffffff;
+	--wd-border: #d9e0e8;
+	--wd-border-strong: #c6d0dc;
+	--wd-primary: #2563eb;
+	--wd-primary-hover: #1d4ed8;
+	--wd-success: #16803d;
+	--wd-warning: #b45309;
+	--wd-danger: #c62828;
+	--wd-neutral: #475569;
+	--wd-focus: rgba(37, 99, 235, .2);
+	--wd-shadow: 0 5px 18px rgba(15, 23, 42, .045);
+	color: var(--wd-text);
+}
+
 body[data-page^="admin-services-wifidog_v3"] #maincontent.container {
 	min-width: 0;
 }
@@ -6,27 +26,172 @@ body[data-page^="admin-services-wifidog_v3"] #maincontent.container {
 body[data-page^="admin-services-wifidog_v3"] h1,
 body[data-page^="admin-services-wifidog_v3"] h2,
 body[data-page^="admin-services-wifidog_v3"] h3,
+body[data-page^="admin-services-wifidog_v3"] h4,
 body[data-page^="admin-services-wifidog_v3"] .tabs > li > a {
+	letter-spacing: 0;
 	word-break: keep-all;
 	overflow-wrap: normal;
 }
 
+.wifidog-shell {
+	display: grid;
+	gap: 16px;
+	color: var(--wd-text);
+}
+
+.wifidog-page-head {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 18px;
+	padding: 18px 20px;
+	border: 1px solid var(--wd-border);
+	border-left: 4px solid var(--wd-primary);
+	border-radius: 7px;
+	background: var(--wd-surface);
+	box-shadow: var(--wd-shadow);
+}
+
+.wifidog-page-head-main {
+	min-width: 0;
+}
+
+.wifidog-page-kicker {
+	display: block;
+	margin-bottom: 5px;
+	color: var(--wd-primary);
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 1.2;
+	text-transform: uppercase;
+}
+
+.wifidog-page-title {
+	margin: 0;
+	color: var(--wd-heading);
+	font-size: 24px;
+	line-height: 1.2;
+}
+
+.wifidog-page-copy {
+	max-width: 760px;
+	margin: 7px 0 0;
+	color: var(--wd-muted);
+	font-size: 13px;
+	line-height: 1.55;
+}
+
+.wifidog-page-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	color: var(--wd-muted);
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.wifidog-panel {
+	min-width: 0;
+	border: 1px solid var(--wd-border);
+	border-radius: 7px;
+	background: var(--wd-surface);
+	box-shadow: var(--wd-shadow);
+}
+
+.wifidog-panel-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 16px;
+	border-bottom: 1px solid var(--wd-border);
+}
+
+.wifidog-panel-title {
+	margin: 0;
+	color: var(--wd-heading);
+	font-size: 15px;
+	line-height: 1.3;
+}
+
+.wifidog-panel-copy {
+	margin: 4px 0 0;
+	color: var(--wd-muted);
+	font-size: 12px;
+	line-height: 1.45;
+}
+
+.wifidog-panel-body {
+	padding: 16px;
+}
+
+.wifidog-panel-body-flush {
+	padding: 0;
+}
+
+.wifidog-panel-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 16px;
+	border-top: 1px solid var(--wd-border);
+	color: var(--wd-muted);
+	font-size: 12px;
+}
+
 .wifidog-page-hint {
-	color: #59636e;
-	line-height: 1.6;
+	color: var(--wd-muted);
+	line-height: 1.55;
 	margin: 4px 0 14px;
 }
 
-.wifidog-section-title {
-	margin-top: 24px;
+.wifidog-count,
+.wifidog-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 24px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.2;
+	white-space: nowrap;
+}
+
+.wifidog-count {
+	min-width: 24px;
+	background: #e8eef7;
+	color: #344054;
+}
+
+.wifidog-badge-ok {
+	background: #dcfce7;
+	color: #166534;
+}
+
+.wifidog-badge-error {
+	background: #fee2e2;
+	color: #991b1b;
+}
+
+.wifidog-badge-info {
+	background: #dbeafe;
+	color: #1d4ed8;
+}
+
+.wifidog-badge-warning {
+	background: #fef3c7;
+	color: #92400e;
 }
 
 .wifidog-table-wrap {
 	width: 100%;
 	overflow-x: auto;
-	border: 1px solid #d8dee4;
-	border-radius: 6px;
-	background: #fff;
+	background: var(--wd-surface);
 }
 
 .wifidog-table {
@@ -38,18 +203,23 @@ body[data-page^="admin-services-wifidog_v3"] .tabs > li > a {
 }
 
 .wifidog-table th {
-	background: #f6f8fa;
-	color: #24292f;
 	padding: 10px 9px;
+	border-bottom: 1px solid var(--wd-border);
+	background: var(--wd-surface-soft);
+	color: #475467;
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.3;
 	text-align: left;
-	border-bottom: 1px solid #d8dee4;
-	font-weight: 600;
 	white-space: nowrap;
 }
 
 .wifidog-table td {
-	padding: 9px;
-	border-bottom: 1px solid #eaeef2;
+	padding: 10px 9px;
+	border-bottom: 1px solid var(--wd-border);
+	color: var(--wd-text);
+	font-size: 13px;
+	line-height: 1.4;
 	vertical-align: middle;
 }
 
@@ -58,7 +228,7 @@ body[data-page^="admin-services-wifidog_v3"] .tabs > li > a {
 }
 
 .wifidog-table tbody tr:hover {
-	background: #f8fafc;
+	background: var(--wd-surface-soft);
 }
 
 .wifidog-actions {
@@ -72,19 +242,23 @@ td.wifidog-actions {
 	display: table-cell;
 }
 
+td.wifidog-actions .wifidog-btn {
+	margin: 2px 3px 2px 0;
+}
+
 .wifidog-btn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: 30px;
-	padding: 6px 12px;
-	margin: 2px;
-	border: 1px solid #c7d0d9;
+	min-height: 32px;
+	padding: 6px 11px;
+	border: 1px solid var(--wd-border-strong);
 	border-radius: 4px;
-	background: #f8fafc;
-	color: #1f2937;
+	background: var(--wd-surface-raised);
+	color: var(--wd-text);
 	cursor: pointer;
 	font-size: 12px;
+	font-weight: 600;
 	line-height: 1.2;
 	text-decoration: none;
 	white-space: nowrap;
@@ -92,74 +266,63 @@ td.wifidog-actions {
 }
 
 .wifidog-btn:hover {
-	background: #eef2f7;
-	border-color: #aab6c2;
+	background: var(--wd-surface-soft);
+	border-color: #aab7c4;
 }
 
 .wifidog-btn:focus {
-	outline: 2px solid #93c5fd;
-	outline-offset: 1px;
+	outline: 0;
+	box-shadow: 0 0 0 3px var(--wd-focus);
+}
+
+.wifidog-btn:disabled {
+	opacity: .55;
+	cursor: not-allowed;
 }
 
 .wifidog-btn-primary,
 .wifidog-btn-info {
-	background: #2563eb;
-	border-color: #2563eb;
+	background: var(--wd-primary);
+	border-color: var(--wd-primary);
 	color: #fff;
 }
 
 .wifidog-btn-primary:hover,
 .wifidog-btn-info:hover {
-	background: #1d4ed8;
-	border-color: #1d4ed8;
+	background: var(--wd-primary-hover);
+	border-color: var(--wd-primary-hover);
 	color: #fff;
 }
 
 .wifidog-btn-success {
-	background: #15803d;
-	border-color: #15803d;
-	color: #fff;
-}
-
-.wifidog-btn-success:hover {
-	background: #166534;
-	border-color: #166534;
+	background: var(--wd-success);
+	border-color: var(--wd-success);
 	color: #fff;
 }
 
 .wifidog-btn-warning {
-	background: #b45309;
-	border-color: #b45309;
-	color: #fff;
-}
-
-.wifidog-btn-warning:hover {
-	background: #92400e;
-	border-color: #92400e;
+	background: var(--wd-warning);
+	border-color: var(--wd-warning);
 	color: #fff;
 }
 
 .wifidog-btn-danger {
-	background: #dc2626;
-	border-color: #dc2626;
-	color: #fff;
-}
-
-.wifidog-btn-danger:hover {
-	background: #b91c1c;
-	border-color: #b91c1c;
+	background: var(--wd-danger);
+	border-color: var(--wd-danger);
 	color: #fff;
 }
 
 .wifidog-btn-secondary {
-	background: #475569;
-	border-color: #475569;
+	background: var(--wd-neutral);
+	border-color: var(--wd-neutral);
 	color: #fff;
 }
 
+.wifidog-btn-success:hover,
+.wifidog-btn-warning:hover,
+.wifidog-btn-danger:hover,
 .wifidog-btn-secondary:hover {
-	background: #334155;
-	border-color: #334155;
+	filter: brightness(.9);
 	color: #fff;
 }
 
@@ -169,16 +332,17 @@ td.wifidog-actions {
 .wifidog-textarea,
 .wifidog-log-toolbar select,
 .wifidog-log-toolbar input {
-	border: 1px solid #cbd5e1;
-	border-radius: 4px;
-	background: #fff;
-	color: #111827;
 	box-sizing: border-box;
+	border: 1px solid var(--wd-border-strong);
+	border-radius: 4px;
+	background: var(--wd-surface-raised);
+	color: var(--wd-text);
 }
 
 .wifidog-note {
 	width: 170px;
 	max-width: 100%;
+	min-height: 32px;
 	padding: 6px 8px;
 }
 
@@ -188,9 +352,9 @@ td.wifidog-actions {
 .wifidog-textarea:focus,
 .wifidog-log-toolbar select:focus,
 .wifidog-log-toolbar input:focus {
-	border-color: #2563eb;
-	outline: 2px solid #bfdbfe;
-	outline-offset: 0;
+	border-color: var(--wd-primary);
+	outline: 0;
+	box-shadow: 0 0 0 3px var(--wd-focus);
 }
 
 .wifidog-note-dirty {
@@ -200,7 +364,7 @@ td.wifidog-actions {
 
 .wifidog-device-info {
 	max-width: 240px;
-	color: #374151;
+	color: #344054;
 	font-size: 12px;
 	line-height: 1.45;
 	word-break: break-word;
@@ -208,131 +372,125 @@ td.wifidog-actions {
 
 .wifidog-device-seen {
 	margin-top: 3px;
-	color: #6b7280;
+	color: var(--wd-muted);
 }
 
 .wifidog-empty,
 .wifidog-loading {
+	padding: 30px 16px;
+	color: var(--wd-muted);
+	font-size: 13px;
 	text-align: center;
-	padding: 28px;
-	color: #6b7280;
 }
 
 .wifidog-empty {
-	background: #f8fafc;
-	border: 1px dashed #cbd5e1;
+	margin: 12px;
+	border: 1px dashed var(--wd-border-strong);
 	border-radius: 6px;
-	margin-top: 10px;
+	background: var(--wd-surface-soft);
 }
 
 .wifidog-msg {
-	padding: 10px 12px;
-	margin: 10px 0 14px;
-	border-radius: 4px;
+	position: sticky;
+	top: 8px;
+	z-index: 20;
 	display: none;
-	line-height: 1.5;
+	padding: 10px 12px;
+	border-radius: 5px;
+	box-shadow: var(--wd-shadow);
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.45;
 }
 
 .wifidog-msg-success {
+	border: 1px solid #a7f3d0;
 	background: #ecfdf5;
 	color: #065f46;
-	border: 1px solid #a7f3d0;
 }
 
 .wifidog-msg-error {
+	border: 1px solid #fecaca;
 	background: #fef2f2;
 	color: #991b1b;
-	border: 1px solid #fecaca;
-}
-
-.wifidog-badge {
-	display: inline-flex;
-	align-items: center;
-	min-height: 22px;
-	padding: 2px 8px;
-	border-radius: 999px;
-	font-size: 12px;
-	font-weight: 600;
-	white-space: nowrap;
-}
-
-.wifidog-badge-ok {
-	background: #dcfce7;
-	color: #166534;
-}
-
-.wifidog-badge-error {
-	background: #fee2e2;
-	color: #991b1b;
-}
-
-.wifidog-generate-box,
-.wifidog-panel {
-	border: 1px solid #d8dee4;
-	border-radius: 6px;
-	background: #fff;
-	padding: 16px;
 }
 
 .wifidog-generate-box {
-	margin-bottom: 18px;
+	padding: 16px;
 }
 
-.wifidog-generate-box h4,
-.wifidog-panel h4 {
-	margin-top: 0;
-	margin-bottom: 12px;
+.wifidog-generate-box h4 {
+	margin: 0 0 14px;
+	color: var(--wd-heading);
+}
+
+.wifidog-form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(240px, 1fr));
+	gap: 12px 18px;
 }
 
 .wifidog-form-group {
-	display: flex;
-	flex-wrap: wrap;
+	display: grid;
+	grid-template-columns: minmax(150px, 190px) minmax(140px, 1fr);
 	align-items: center;
-	gap: 8px 12px;
+	gap: 5px 12px;
 	margin-bottom: 12px;
 }
 
 .wifidog-form-group label {
-	min-width: 170px;
+	color: #344054;
+	font-size: 13px;
 	font-weight: 600;
-	color: #24292f;
 }
 
 .wifidog-form-group input,
 .wifidog-form-group select {
-	min-height: 32px;
+	width: 100%;
+	min-height: 34px;
 	padding: 6px 8px;
 	font-size: 13px;
 }
 
 .wifidog-form-hint {
-	flex-basis: 100%;
-	margin-left: 182px;
-	color: #6b7280;
+	grid-column: 2;
+	margin: 0;
+	color: var(--wd-muted);
 	font-size: 12px;
+	line-height: 1.45;
 }
 
 .wifidog-backup-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	grid-template-columns: minmax(260px, .72fr) minmax(360px, 1.28fr);
 	gap: 16px;
-	margin-top: 12px;
 }
 
-.wifidog-panel p {
-	color: #59636e;
-	line-height: 1.6;
-	margin: 0 0 12px;
+.wifidog-backup-grid .wifidog-panel-body p {
+	margin: 0 0 14px;
+	color: var(--wd-muted);
+	font-size: 13px;
+	line-height: 1.55;
+}
+
+.wifidog-checkline {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 14px 0 6px;
+	color: var(--wd-text);
+	font-size: 13px;
 }
 
 .wifidog-file {
 	display: block;
+	max-width: 100%;
 	margin: 10px 0;
 }
 
 .wifidog-textarea {
 	width: 100%;
-	min-height: 190px;
+	min-height: 210px;
 	padding: 10px;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	font-size: 12px;
@@ -344,37 +502,51 @@ td.wifidog-actions {
 	flex-wrap: wrap;
 	align-items: end;
 	gap: 10px;
-	margin: 12px 0;
 }
 
 .wifidog-log-toolbar label {
-	display: inline-flex;
-	flex-direction: column;
-	gap: 4px;
+	display: grid;
+	gap: 5px;
+	min-width: 120px;
 	margin: 0;
-	color: #374151;
-	font-weight: 600;
+	color: var(--wd-muted);
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.wifidog-log-toolbar label.wifidog-log-search {
+	flex: 1 1 240px;
 }
 
 .wifidog-log-toolbar select,
 .wifidog-log-toolbar input {
-	min-height: 32px;
+	width: 100%;
+	min-height: 34px;
 	padding: 5px 8px;
 }
 
+.wifidog-log-meta,
+.wifidog-log-error {
+	margin: 0;
+	font-size: 12px;
+}
+
 .wifidog-log-meta {
-	color: #6b7280;
-	margin: 8px 0;
+	color: var(--wd-muted);
+}
+
+.wifidog-log-error {
+	color: var(--wd-danger);
 }
 
 .wifidog-log-output {
-	min-height: 420px;
+	min-height: 430px;
 	max-height: 68vh;
 	overflow: auto;
+	padding: 14px;
+	border-radius: 0 0 7px 7px;
 	background: #111827;
 	color: #e5e7eb;
-	border-radius: 6px;
-	padding: 12px;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	font-size: 12px;
 	line-height: 1.55;
@@ -387,88 +559,214 @@ td.wifidog-actions {
 }
 
 .wifidog-log-source {
-	color: #93c5fd;
 	margin-right: 8px;
-}
-
-.wifidog-log-error {
-	color: #b91c1c;
-	margin: 8px 0;
+	color: #93c5fd;
 }
 
 .wifidog-status-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	grid-template-columns: repeat(3, minmax(0, 1fr));
 	gap: 10px;
-	margin-top: 10px;
 }
 
 .wifidog-status-item {
-	border: 1px solid #d8dee4;
+	display: grid;
+	gap: 8px;
+	min-height: 78px;
+	padding: 13px;
+	border: 1px solid var(--wd-border);
 	border-radius: 6px;
-	background: #fff;
-	padding: 12px;
+	background: var(--wd-surface-soft);
 }
 
 .wifidog-status-label {
-	display: block;
-	color: #6b7280;
-	margin-bottom: 6px;
+	color: var(--wd-muted);
+	font-size: 12px;
+	font-weight: 600;
 }
 
-:root[data-darkmode="true"] .wifidog-page-hint,
-:root[data-darkmode="true"] .wifidog-panel p,
-:root[data-darkmode="true"] .wifidog-device-seen,
-:root[data-darkmode="true"] .wifidog-form-hint,
-:root[data-darkmode="true"] .wifidog-log-meta,
-:root[data-darkmode="true"] .wifidog-empty,
-:root[data-darkmode="true"] .wifidog-loading,
-:root[data-darkmode="true"] .wifidog-status-label {
-	color: var(--text-color-medium);
+.wifidog-status-item .wifidog-badge {
+	justify-self: start;
 }
 
-:root[data-darkmode="true"] .wifidog-table-wrap,
-:root[data-darkmode="true"] .wifidog-generate-box,
-:root[data-darkmode="true"] .wifidog-panel,
-:root[data-darkmode="true"] .wifidog-status-item {
-	background: var(--background-color-high);
-	border-color: var(--border-color-medium);
+/* Keep the native CBI settings form, but align it with the dashboard pages. */
+body[data-page="admin-services-wifidog_v3-settings"] .cbi-map > h2 {
+	margin: 0;
+	padding: 18px 20px;
+	border: 1px solid var(--wd-border);
+	border-bottom: 0;
+	border-left: 4px solid var(--wd-primary);
+	border-radius: 7px 7px 0 0;
+	background: var(--wd-surface);
+	color: var(--wd-heading);
+	font-size: 24px;
 }
 
-:root[data-darkmode="true"] .wifidog-table th {
-	background: var(--background-color-low);
-	color: var(--text-color-high);
-	border-bottom-color: var(--border-color-medium);
+body[data-page="admin-services-wifidog_v3-settings"] .cbi-map > .cbi-map-descr {
+	margin: 0 0 16px;
+	padding: 0 20px 16px;
+	border: 1px solid var(--wd-border);
+	border-top: 0;
+	border-left: 4px solid var(--wd-primary);
+	border-radius: 0 0 7px 7px;
+	background: var(--wd-surface);
+	box-shadow: var(--wd-shadow);
+	color: var(--wd-muted);
+	font-size: 13px;
+	line-height: 1.55;
 }
 
-:root[data-darkmode="true"] .wifidog-table td {
-	border-bottom-color: var(--border-color-low);
+body[data-page="admin-services-wifidog_v3-settings"] .cbi-section {
+	padding: 0;
+	border: 1px solid var(--wd-border);
+	border-radius: 7px;
+	background: var(--wd-surface);
+	box-shadow: var(--wd-shadow);
 }
 
-:root[data-darkmode="true"] .wifidog-table tbody tr:hover,
-:root[data-darkmode="true"] .wifidog-empty {
-	background: var(--background-color-low);
+body[data-page="admin-services-wifidog_v3-settings"] .cbi-section > h3 {
+	margin: 0;
+	padding: 14px 16px;
+	border-bottom: 1px solid var(--wd-border);
+	color: var(--wd-heading);
+	font-size: 15px;
 }
 
-:root[data-darkmode="true"] .wifidog-note,
-:root[data-darkmode="true"] .wifidog-form-group input,
-:root[data-darkmode="true"] .wifidog-form-group select,
-:root[data-darkmode="true"] .wifidog-textarea,
-:root[data-darkmode="true"] .wifidog-log-toolbar select,
-:root[data-darkmode="true"] .wifidog-log-toolbar input {
-	background: var(--background-color-high);
-	border-color: var(--border-color-medium);
-	color: var(--text-color-high);
+body[data-page="admin-services-wifidog_v3-settings"] .cbi-tabmenu {
+	margin: 0;
+	padding: 10px 12px 0;
+	border-bottom: 1px solid var(--wd-border);
+	background: var(--wd-surface-soft);
 }
 
+body[data-page="admin-services-wifidog_v3-settings"] .cbi-value {
+	padding-left: 16px;
+	padding-right: 16px;
+}
+
+body[data-page="admin-services-wifidog_v3-settings"] .cbi-page-actions {
+	margin-top: 14px;
+	padding: 12px 0;
+}
+
+@media (prefers-color-scheme: dark) {
+	body[data-page^="admin-services-wifidog_v3"] {
+		--wd-text: #e5edf7;
+		--wd-heading: #f8fafc;
+		--wd-muted: #9aa8bd;
+		--wd-surface: #111827;
+		--wd-surface-soft: #1b2534;
+		--wd-surface-raised: #172033;
+		--wd-border: rgba(148, 163, 184, .22);
+		--wd-border-strong: rgba(148, 163, 184, .34);
+		--wd-primary: #60a5fa;
+		--wd-primary-hover: #3b82f6;
+		--wd-focus: rgba(96, 165, 250, .26);
+		--wd-shadow: 0 6px 20px rgba(0, 0, 0, .22);
+		color-scheme: dark;
+	}
+}
+
+:root[data-darkmode="true"] body[data-page^="admin-services-wifidog_v3"],
+html.dark body[data-page^="admin-services-wifidog_v3"],
+body.dark[data-page^="admin-services-wifidog_v3"],
+[data-theme="dark"] body[data-page^="admin-services-wifidog_v3"] {
+	--wd-text: #e5edf7;
+	--wd-heading: #f8fafc;
+	--wd-muted: #9aa8bd;
+	--wd-surface: #111827;
+	--wd-surface-soft: #1b2534;
+	--wd-surface-raised: #172033;
+	--wd-border: rgba(148, 163, 184, .22);
+	--wd-border-strong: rgba(148, 163, 184, .34);
+	--wd-primary: #60a5fa;
+	--wd-primary-hover: #3b82f6;
+	--wd-focus: rgba(96, 165, 250, .26);
+	--wd-shadow: 0 6px 20px rgba(0, 0, 0, .22);
+	color-scheme: dark;
+}
+
+:root[data-darkmode="true"] .wifidog-count,
+html.dark .wifidog-count,
+body.dark .wifidog-count,
+[data-theme="dark"] .wifidog-count {
+	background: rgba(100, 116, 139, .28);
+	color: #dbe4ef;
+}
+
+:root[data-darkmode="true"] .wifidog-badge-ok,
+html.dark .wifidog-badge-ok,
+body.dark .wifidog-badge-ok,
+[data-theme="dark"] .wifidog-badge-ok {
+	background: rgba(22, 101, 52, .34);
+	color: #bbf7d0;
+}
+
+:root[data-darkmode="true"] .wifidog-badge-error,
+html.dark .wifidog-badge-error,
+body.dark .wifidog-badge-error,
+[data-theme="dark"] .wifidog-badge-error {
+	background: rgba(153, 27, 27, .34);
+	color: #fecaca;
+}
+
+:root[data-darkmode="true"] .wifidog-badge-info,
+html.dark .wifidog-badge-info,
+body.dark .wifidog-badge-info,
+[data-theme="dark"] .wifidog-badge-info {
+	background: rgba(29, 78, 216, .34);
+	color: #bfdbfe;
+}
+
+:root[data-darkmode="true"] .wifidog-badge-warning,
+html.dark .wifidog-badge-warning,
+body.dark .wifidog-badge-warning,
+[data-theme="dark"] .wifidog-badge-warning {
+	background: rgba(146, 64, 14, .36);
+	color: #fde68a;
+}
+
+:root[data-darkmode="true"] .wifidog-table th,
+html.dark .wifidog-table th,
+body.dark .wifidog-table th,
+[data-theme="dark"] .wifidog-table th,
 :root[data-darkmode="true"] .wifidog-device-info,
-:root[data-darkmode="true"] .wifidog-form-group label {
-	color: var(--text-color-high);
+html.dark .wifidog-device-info,
+body.dark .wifidog-device-info,
+[data-theme="dark"] .wifidog-device-info,
+:root[data-darkmode="true"] .wifidog-form-group label,
+html.dark .wifidog-form-group label,
+body.dark .wifidog-form-group label,
+[data-theme="dark"] .wifidog-form-group label {
+	color: #d6deea;
 }
 
-:root[data-darkmode="true"] .wifidog-note-dirty {
-	background: rgba(180, 83, 9, .18);
+:root[data-darkmode="true"] .wifidog-note-dirty,
+html.dark .wifidog-note-dirty,
+body.dark .wifidog-note-dirty,
+[data-theme="dark"] .wifidog-note-dirty {
 	border-color: #d97706;
+	background: rgba(180, 83, 9, .18);
+}
+
+@media screen and (max-width: 900px) {
+	.wifidog-page-head {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.wifidog-page-meta {
+		justify-content: flex-start;
+	}
+
+	.wifidog-form-grid,
+	.wifidog-backup-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.wifidog-status-grid {
+		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	}
 }
 
 @media screen and (max-device-width: 854px), screen and (max-width: 854px) {
@@ -504,19 +802,12 @@ td.wifidog-actions {
 
 	body[data-page^="admin-services-wifidog_v3"] #tabmenu .tabs > li > a {
 		display: block;
-		white-space: nowrap;
-		word-break: keep-all;
 		padding: 6px 10px;
-	}
-
-	body[data-page^="admin-services-wifidog_v3"] .cbi-section > h3,
-	body[data-page^="admin-services-wifidog_v3"] .wifidog-section-title {
-		white-space: normal;
+		white-space: nowrap;
 		word-break: keep-all;
 	}
 
 	.wifidog-table-wrap {
-		overflow-x: auto;
 		-webkit-overflow-scrolling: touch;
 	}
 
@@ -527,23 +818,26 @@ td.wifidog-actions {
 }
 
 @media (max-width: 700px) {
+	.wifidog-page-head {
+		padding: 15px;
+	}
+
+	.wifidog-page-title,
+	body[data-page="admin-services-wifidog_v3-settings"] .cbi-map > h2 {
+		font-size: 21px;
+	}
+
+	.wifidog-panel-head {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
 	.wifidog-form-group {
-		display: block;
+		grid-template-columns: 1fr;
 	}
 
-	.wifidog-form-group label,
-	.wifidog-form-group input,
-	.wifidog-form-group select,
 	.wifidog-form-hint {
-		display: block;
-		width: 100% !important;
-		margin-left: 0;
-	}
-
-	.wifidog-form-group label,
-	.wifidog-form-group input,
-	.wifidog-form-group select {
-		margin-bottom: 6px;
+		grid-column: 1;
 	}
 
 	.wifidog-log-toolbar,

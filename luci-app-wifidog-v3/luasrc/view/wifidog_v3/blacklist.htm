@@ -66,6 +66,7 @@ function loadDevices() {
 	.then(function(data) {
 		loading.style.display = 'none';
 		var devices = Array.isArray(data.devices) ? data.devices : [];
+		document.getElementById('devices-count').textContent = devices.length;
 		if (!data.success || devices.length === 0) {
 			empty.style.display = 'block';
 			return;
@@ -95,6 +96,7 @@ function loadDevices() {
 	})
 	.catch(function(err) {
 		loading.style.display = 'none';
+		document.getElementById('devices-count').textContent = '0';
 		showMessage('加载黑名单失败: ' + err, 'error');
 	});
 }
@@ -148,36 +150,37 @@ if (document.readyState === 'loading') {
 
 <%+wifidog_v3/styles%>
 
-<div id="wifidog-msg" class="wifidog-msg" style="display:none;"></div>
-
-<div class="cbi-section">
-	<h3><%:黑名单设备列表%></h3>
-	<p class="wifidog-page-hint"><%:黑名单中的设备只能访问内网资源，访问公网 HTTP 时只会看到已拉黑提示，不能自助授权。%></p>
-
-	<div class="wifidog-table-wrap">
-		<table class="wifidog-table cbi-section-table">
-			<thead>
-				<tr>
-					<th width="10%"><%:IP地址%></th>
-					<th width="17%"><%:MAC地址%></th>
-					<th width="12%"><%:主机名%></th>
-					<th width="18%"><%:设备信息%></th>
-					<th width="13%"><%:备注%></th>
-					<th width="13%"><%:添加时间%></th>
-					<th width="17%"><%:操作%></th>
-				</tr>
-			</thead>
-			<tbody id="devices-tbody">
-			</tbody>
-		</table>
-	</div>
-
-	<div id="devices-loading" class="wifidog-loading">
-		<%:正在加载黑名单...%>
-	</div>
-	<div id="devices-empty" class="wifidog-empty" style="display:none;">
-		<%:黑名单中没有设备%>
-	</div>
+<div class="wifidog-shell">
+	<header class="wifidog-page-head">
+		<div class="wifidog-page-head-main">
+			<span class="wifidog-page-kicker"><%:公网隔离%></span>
+			<h2 class="wifidog-page-title"><%:黑名单管理%></h2>
+			<p class="wifidog-page-copy"><%:黑名单设备保留内网访问能力，但无法访问公网或进行自助认证。%></p>
+		</div>
+		<div class="wifidog-page-meta"><span class="wifidog-badge wifidog-badge-error"><%:公网阻断%></span></div>
+	</header>
+	<div id="wifidog-msg" class="wifidog-msg" style="display:none;" aria-live="polite"></div>
+	<section class="wifidog-panel">
+		<div class="wifidog-panel-head">
+			<div><h3 class="wifidog-panel-title"><%:黑名单设备%></h3><p class="wifidog-panel-copy"><%:移出名单后设备回到待授权状态，原备注继续保留%></p></div>
+			<span id="devices-count" class="wifidog-count">0</span>
+		</div>
+		<div class="wifidog-panel-body wifidog-panel-body-flush">
+			<div class="wifidog-table-wrap">
+				<table class="wifidog-table cbi-section-table">
+					<thead><tr>
+						<th width="10%"><%:IP地址%></th><th width="17%"><%:MAC地址%></th>
+						<th width="12%"><%:主机名%></th><th width="18%"><%:设备信息%></th>
+						<th width="13%"><%:备注%></th><th width="13%"><%:添加时间%></th>
+						<th width="17%"><%:操作%></th>
+					</tr></thead>
+					<tbody id="devices-tbody"></tbody>
+				</table>
+			</div>
+			<div id="devices-loading" class="wifidog-loading"><%:正在加载黑名单...%></div>
+			<div id="devices-empty" class="wifidog-empty" style="display:none;"><%:黑名单中没有设备%></div>
+		</div>
+	</section>
 </div>
 
 <% write(script) %>

@@ -3,6 +3,7 @@
 Current release gates:
 
 - `test_source_contracts.py`: fast source, packaging, security, and lifecycle contracts.
+- `test_ipk_upgrade.py`: OpenWrt 23.05 `opkg` upgrade and UCI preservation regression.
 - `e2e_openwrt23_container.py`: authoritative Docker OpenWrt 23.05 end-to-end regression.
 - `utm_smoke.lua`: OpenWrt 24/25 UTM functional smoke regression.
 - `utm_radius_check.sh`: UTM FreeRADIUS PAP and `Session-Timeout` regression.
@@ -12,6 +13,7 @@ Run the local release gates:
 
 ```sh
 python3 test/test_source_contracts.py
+python3 test/test_ipk_upgrade.py
 python3 test/e2e_openwrt23_container.py
 ```
 

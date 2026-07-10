@@ -128,7 +128,7 @@ local backup_json = [[{
 	"settings": {
 		"enabled": "1",
 		"wan_interface": "eth0",
-		"lan_interface": "eth0",
+		"lan_interface": "eth1",
 		"portal_port": "8080",
 		"lan_subnet": "192.168.77.0/24",
 		"auth_code_enabled": "1",

@@ -154,6 +154,7 @@ function loadPending() {
 	.then(function(data) {
 		loading.style.display = 'none';
 		var devices = Array.isArray(data.devices) ? data.devices : [];
+		document.getElementById('pending-count').textContent = devices.length;
 		if (!data.success || devices.length === 0) {
 			empty.style.display = 'block';
 			return;
@@ -187,6 +188,7 @@ function loadPending() {
 	})
 	.catch(function(err) {
 		loading.style.display = 'none';
+		document.getElementById('pending-count').textContent = '0';
 		showMessage('加载待授权设备失败: ' + err, 'error');
 	});
 }
@@ -201,6 +203,7 @@ function loadAuthorized() {
 	.then(function(data) {
 		loading.style.display = 'none';
 		var devices = Array.isArray(data.devices) ? data.devices : [];
+		document.getElementById('authorized-count').textContent = devices.length;
 		if (!data.success || devices.length === 0) {
 			empty.style.display = 'block';
 			return;
@@ -238,6 +241,7 @@ function loadAuthorized() {
 	})
 	.catch(function(err) {
 		loading.style.display = 'none';
+		document.getElementById('authorized-count').textContent = '0';
 		showMessage('加载已授权设备失败: ' + err, 'error');
 	});
 }
@@ -289,50 +293,66 @@ if (document.readyState === 'loading') {
 
 <%+wifidog_v3/styles%>
 
-<div id="wifidog-msg" class="wifidog-msg" style="display:none;"></div>
+<div class="wifidog-shell">
+	<header class="wifidog-page-head">
+		<div class="wifidog-page-head-main">
+			<span class="wifidog-page-kicker"><%:设备访问控制%></span>
+			<h2 class="wifidog-page-title"><%:网络设备%></h2>
+			<p class="wifidog-page-copy"><%:查看内网终端的认证状态，并集中处理备注、名单和临时授权。%></p>
+		</div>
+		<div class="wifidog-page-meta"><span class="wifidog-badge wifidog-badge-info"><%:每15秒刷新%></span></div>
+	</header>
 
-<div class="cbi-section">
-	<h3><%:待授权设备列表%></h3>
-	<p class="wifidog-page-hint"><%:以下为当前内网中未受管理的设备，可以先填写备注，再添加白名单、黑名单或手动授权。%></p>
-	<div class="wifidog-table-wrap">
-		<table class="wifidog-table cbi-section-table">
-			<thead>
-				<tr>
-					<th width="11%"><%:IP地址%></th>
-					<th width="17%"><%:MAC地址%></th>
-					<th width="13%"><%:主机名%></th>
-					<th width="17%"><%:设备信息%></th>
-					<th width="15%"><%:备注%></th>
-					<th width="27%"><%:操作%></th>
-				</tr>
-			</thead>
-			<tbody id="pending-tbody"></tbody>
-		</table>
-	</div>
-	<div id="pending-loading" class="wifidog-loading"><%:正在加载待授权设备...%></div>
-	<div id="pending-empty" class="wifidog-empty" style="display:none;"><%:当前没有待授权的设备%></div>
+	<div id="wifidog-msg" class="wifidog-msg" style="display:none;" aria-live="polite"></div>
 
-	<h3 class="wifidog-section-title"><%:已授权设备列表%></h3>
-	<p class="wifidog-page-hint"><%:这里显示授权码自助授权和管理页面手动授权的设备，以及授权剩余有效时间。%></p>
-	<div class="wifidog-table-wrap">
-		<table class="wifidog-table cbi-section-table">
-			<thead>
-				<tr>
-					<th width="10%"><%:IP地址%></th>
-					<th width="15%"><%:MAC地址%></th>
-					<th width="11%"><%:主机名%></th>
-					<th width="14%"><%:授权方式%></th>
-					<th width="10%"><%:剩余时间%></th>
-					<th width="15%"><%:设备信息%></th>
-					<th width="12%"><%:备注%></th>
-					<th width="13%"><%:操作%></th>
-				</tr>
-			</thead>
-			<tbody id="authorized-tbody"></tbody>
-		</table>
-	</div>
-	<div id="authorized-loading" class="wifidog-loading"><%:正在加载已授权设备...%></div>
-	<div id="authorized-empty" class="wifidog-empty" style="display:none;"><%:当前没有已授权的设备%></div>
+	<section class="wifidog-panel">
+		<div class="wifidog-panel-head">
+			<div>
+				<h3 class="wifidog-panel-title"><%:待授权设备%></h3>
+				<p class="wifidog-panel-copy"><%:未纳入名单且尚未取得临时授权的内网终端%></p>
+			</div>
+			<span id="pending-count" class="wifidog-count">0</span>
+		</div>
+		<div class="wifidog-panel-body wifidog-panel-body-flush">
+			<div class="wifidog-table-wrap">
+				<table class="wifidog-table cbi-section-table">
+					<thead><tr>
+						<th width="11%"><%:IP地址%></th><th width="17%"><%:MAC地址%></th>
+						<th width="13%"><%:主机名%></th><th width="17%"><%:设备信息%></th>
+						<th width="15%"><%:备注%></th><th width="27%"><%:操作%></th>
+					</tr></thead>
+					<tbody id="pending-tbody"></tbody>
+				</table>
+			</div>
+			<div id="pending-loading" class="wifidog-loading"><%:正在加载待授权设备...%></div>
+			<div id="pending-empty" class="wifidog-empty" style="display:none;"><%:当前没有待授权的设备%></div>
+		</div>
+	</section>
+
+	<section class="wifidog-panel">
+		<div class="wifidog-panel-head">
+			<div>
+				<h3 class="wifidog-panel-title"><%:已授权设备%></h3>
+				<p class="wifidog-panel-copy"><%:显示授权来源及剩余有效时间，可直接转入黑白名单%></p>
+			</div>
+			<span id="authorized-count" class="wifidog-count">0</span>
+		</div>
+		<div class="wifidog-panel-body wifidog-panel-body-flush">
+			<div class="wifidog-table-wrap">
+				<table class="wifidog-table cbi-section-table">
+					<thead><tr>
+						<th width="10%"><%:IP地址%></th><th width="15%"><%:MAC地址%></th>
+						<th width="11%"><%:主机名%></th><th width="14%"><%:授权方式%></th>
+						<th width="10%"><%:剩余时间%></th><th width="15%"><%:设备信息%></th>
+						<th width="12%"><%:备注%></th><th width="13%"><%:操作%></th>
+					</tr></thead>
+					<tbody id="authorized-tbody"></tbody>
+				</table>
+			</div>
+			<div id="authorized-loading" class="wifidog-loading"><%:正在加载已授权设备...%></div>
+			<div id="authorized-empty" class="wifidog-empty" style="display:none;"><%:当前没有已授权的设备%></div>
+		</div>
+	</section>
 </div>
 
 <% write(script) %>

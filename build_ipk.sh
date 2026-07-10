@@ -3,7 +3,7 @@
 set -e
 
 PKG_NAME="luci-app-wifidog-v3"
-PKG_VERSION="1.0.3"
+PKG_VERSION="1.0.4"
 PKG_RELEASE="1"
 PKG_ARCH="all"
 PKG_MAINTAINER="WiFiDog V3 Team"
@@ -45,6 +45,10 @@ Description: ${PKG_DESCRIPTION}
   - Time-based authorization (24h default)
   - Auth code generation with usage limits
   - Optional FreeRADIUS PAP authentication
+EOF
+
+cat > "$BUILD_DIR/control/conffiles" << 'EOF'
+/etc/config/wifidog_v3
 EOF
 
 # ============================================
@@ -101,6 +105,9 @@ if [ -z "${IPKG_INSTROOT}" ]; then
     # Run UCI defaults
     if [ -f /etc/uci-defaults/40_luci-wifidog-v3 ]; then
         ( . /etc/uci-defaults/40_luci-wifidog-v3 ) && rm -f /etc/uci-defaults/40_luci-wifidog-v3
+    fi
+    if [ -f /etc/config/wifidog_v3 ]; then
+        rm -f /etc/config/wifidog_v3-opkg /etc/config/wifidog_v3.apk-new
     fi
     # Make init script executable
     chmod 755 /etc/init.d/wifidog_v3 2>/dev/null

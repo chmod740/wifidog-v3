@@ -1,7 +1,9 @@
 -- Settings page using standard CBI Map
 local sys = require "luci.sys"
 
-local m = Map("wifidog_v3", translate("WiFiDog V3 系统设置"))
+local m = Map("wifidog_v3", translate("WiFiDog V3 系统设置"),
+	translate("集中配置认证方式、网络接口、Portal 页面和服务运行状态。"))
+m:append(Template("wifidog_v3/styles"))
 
 local s = m:section(NamedSection, "settings", "wifidog_v3", translate("基本设置"))
 
@@ -15,17 +17,8 @@ enabled.rmempty = false
 -- WAN Interface auto-detect display
 local wan_info = s:taboption("general", DummyValue, "_wan_info", translate("WAN接口自动检测"))
 wan_info.rawhtml = true
-wan_info.default = [[<script>
-(function() {
-	var xhr = new XMLHttpRequest();
-	xhr.open('GET', ']] .. luci.dispatcher.build_url("admin/services/wifidog_v3/status") .. [[', true);
-	xhr.onload = function() {
-		// This is handled by status endpoint
-	};
-	xhr.send();
-})();
-</script>
-<p><em>]] .. translate("系统将自动检测WAN接口，也可在下方手动指定") .. [[</em></p>]]
+wan_info.default = [[<p class="wifidog-page-hint"><em>]] ..
+	translate("系统将自动检测WAN接口，也可在下方手动指定") .. [[</em></p>]]
 
 -- WAN Interface (optional manual override)
 local wan_iface = s:taboption("general", Value, "wan_interface", translate("WAN接口"),

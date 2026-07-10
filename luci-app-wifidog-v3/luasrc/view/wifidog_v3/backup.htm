@@ -91,31 +91,38 @@ if (document.readyState === 'loading') {
 
 <%+wifidog_v3/styles%>
 
-<div id="wifidog-msg" class="wifidog-msg" style="display:none;"></div>
-
-<div class="cbi-section">
-	<h3><%:配置备份与恢复%></h3>
-	<p class="wifidog-page-hint"><%:导出的备份包含系统设置、待授权设备、白名单、黑名单、已授权设备、设备备注和授权码。恢复备份会替换当前这些配置。%></p>
-
+<div class="wifidog-shell">
+	<header class="wifidog-page-head">
+		<div class="wifidog-page-head-main">
+			<span class="wifidog-page-kicker"><%:配置迁移%></span>
+			<h2 class="wifidog-page-title"><%:备份与恢复%></h2>
+			<p class="wifidog-page-copy"><%:备份系统设置、设备名单、MAC 备注、授权状态和授权码。%></p>
+		</div>
+		<div class="wifidog-page-meta"><span class="wifidog-badge wifidog-badge-warning"><%:恢复会替换当前配置%></span></div>
+	</header>
+	<div id="wifidog-msg" class="wifidog-msg" style="display:none;" aria-live="polite"></div>
 	<div class="wifidog-backup-grid">
-		<div class="wifidog-panel">
-				<h4><%:导出配置%></h4>
-				<p><%:将当前 WiFiDog V3 配置导出为 JSON 文件，便于迁移或回滚。%></p>
-				<label><input type="checkbox" id="include-secrets" value="1"> <%:包含 RADIUS 共享密钥等敏感信息%></label>
-				<p class="wifidog-form-hint"><%:默认不导出敏感信息；包含密钥的备份应加密保管。%></p>
-				<button type="button" class="wifidog-btn wifidog-btn-primary" onclick="exportConfig()"><%:导出配置%></button>
-		</div>
-
-		<div class="wifidog-panel">
-			<h4><%:恢复配置%></h4>
-			<p><%:选择之前导出的 JSON 备份文件，或直接粘贴备份内容后执行恢复。%></p>
-			<input class="wifidog-file" type="file" id="backup-file" accept=".json,application/json">
-			<textarea id="backup-json" class="wifidog-textarea" placeholder="请粘贴 WiFiDog V3 备份 JSON 内容"></textarea>
-			<div class="wifidog-actions">
-				<button type="button" class="wifidog-btn wifidog-btn-warning" onclick="importConfig()"><%:恢复配置%></button>
-				<button type="button" class="wifidog-btn wifidog-btn-secondary" onclick="document.getElementById('backup-json').value=''"><%:清空内容%></button>
+		<section class="wifidog-panel">
+			<div class="wifidog-panel-head"><div><h3 class="wifidog-panel-title"><%:导出配置%></h3><p class="wifidog-panel-copy"><%:生成可迁移的 JSON 备份%></p></div></div>
+			<div class="wifidog-panel-body">
+				<p><%:默认排除 RADIUS 共享密钥，适合日常备份和跨设备迁移。%></p>
+				<label class="wifidog-checkline"><input type="checkbox" id="include-secrets" value="1"> <span><%:包含 RADIUS 共享密钥等敏感信息%></span></label>
+				<p class="wifidog-form-hint"><%:包含密钥的备份应加密保管%></p>
+				<div class="wifidog-actions"><button type="button" class="wifidog-btn wifidog-btn-primary" onclick="exportConfig()"><%:导出配置%></button></div>
 			</div>
-		</div>
+		</section>
+
+		<section class="wifidog-panel">
+			<div class="wifidog-panel-head"><div><h3 class="wifidog-panel-title"><%:恢复配置%></h3><p class="wifidog-panel-copy"><%:读取备份文件或粘贴 JSON 内容%></p></div></div>
+			<div class="wifidog-panel-body">
+				<input class="wifidog-file" type="file" id="backup-file" accept=".json,application/json">
+				<textarea id="backup-json" class="wifidog-textarea" placeholder="请粘贴 WiFiDog V3 备份 JSON 内容"></textarea>
+				<div class="wifidog-actions">
+					<button type="button" class="wifidog-btn wifidog-btn-warning" onclick="importConfig()"><%:恢复配置%></button>
+					<button type="button" class="wifidog-btn wifidog-btn-secondary" onclick="document.getElementById('backup-json').value=''"><%:清空内容%></button>
+				</div>
+			</div>
+		</section>
 	</div>
 </div>
 

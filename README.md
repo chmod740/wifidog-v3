@@ -59,9 +59,17 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 - 配置备份恢复：支持导入/导出系统设置、黑白名单、备注、授权码和 Portal 页面配置。
 - 敏感配置保护：备份默认不包含 RADIUS 共享密钥，可按需显式导出完整配置。
 - 运行日志：后台可查看本系统运行日志和相关 syslog，支持清空和 512 KiB 自动轮转。
+- LuCI 后台：统一的响应式管理界面，支持深色模式，并针对桌面和移动端优化表格、表单和状态展示。
 - Passwall2 共存：使用更早优先级的 nftables 规则，尽量在分流规则前完成认证控制。
 - 安全卸载：卸载时清理 nftables、Portal 进程、DHCP/RA 广告、运行状态和配置文件。
 - 安全加固：授权码计数使用跨进程事务锁，包含输入校验、请求体限制、安全响应头和服务启动失败回滚。
+
+## v1.0.4 更新
+
+- 将 `/etc/config/wifidog_v3` 正式声明为 conffile，IPK/APK 升级不再覆盖现有设置、名单、备注、授权码和 RADIUS 密钥。
+- 升级后自动清理包管理器生成的 `wifidog_v3-opkg` 和 `wifidog_v3.apk-new` 默认配置副本。
+- 重构 LuCI 管理后台样式，统一页面标题、状态计数、操作区、表格和表单，并增加响应式布局与深色模式。
+- 增加真实 `v1.0.3 -> v1.0.4` IPK/APK 升级回归，覆盖配置保留、服务恢复和临时文件清理。
 
 ## v1.0.3 更新
 
@@ -103,7 +111,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 输出：
 
 ```text
-dist/luci-app-wifidog-v3_1.0.3-1_all.ipk
+dist/luci-app-wifidog-v3_1.0.4-1_all.ipk
 ```
 
 构建 OpenWrt 25 APK：
@@ -115,28 +123,28 @@ dist/luci-app-wifidog-v3_1.0.3-1_all.ipk
 输出：
 
 ```text
-dist/openwrt25/luci-app-wifidog-v3-1.0.3-r1.apk
+dist/openwrt25/luci-app-wifidog-v3-1.0.4-r1.apk
 ```
 
 ## 安装
 
 最新发布包：
 
-- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.3>
-- IPK：`luci-app-wifidog-v3_1.0.3-1_all.ipk`
-- APK：`luci-app-wifidog-v3-1.0.3-r1.apk`
+- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.4>
+- IPK：`luci-app-wifidog-v3_1.0.4-1_all.ipk`
+- APK：`luci-app-wifidog-v3-1.0.4-r1.apk`
 
 OpenWrt 23/24：
 
 ```sh
 opkg update
-opkg install /tmp/luci-app-wifidog-v3_1.0.3-1_all.ipk
+opkg install /tmp/luci-app-wifidog-v3_1.0.4-1_all.ipk
 ```
 
 OpenWrt 25：
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.3-r1.apk
+apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.4-r1.apk
 ```
 
 安装后进入 LuCI：
@@ -160,6 +168,8 @@ apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.3-r1.apk
 ```text
 /etc/config/wifidog_v3
 ```
+
+该文件已由软件包声明为 conffile。直接安装新版 IPK/APK 进行升级时，已有配置、设备名单和备注会保留。
 
 常用设置：
 
@@ -196,6 +206,12 @@ python3 test/e2e_openwrt23_container.py
 python3 test/test_source_contracts.py
 ```
 
+IPK 原位升级测试：
+
+```sh
+python3 test/test_ipk_upgrade.py
+```
+
 OpenWrt 25 / APK 模式：
 
 ```sh
@@ -210,11 +226,11 @@ lua /tmp/utm_smoke.lua
 
 最近回归结果：
 
-- 源码契约测试：`33 passed, 0 failed`
+- 源码契约测试：`36 passed, 0 failed`
 - Docker OpenWrt 23.05.6：`124 passed, 0 failed`
-- UTM OpenWrt 23.05.6：安装、Portal、授权码、RADIUS、Passwall2 共存、关闭、卸载清理通过
-- UTM OpenWrt 24.10.6：v1.0.3 IPK 安装、Portal、授权码、RADIUS PAP、`Session-Timeout`、运行日志、关闭、卸载清理通过
-- UTM OpenWrt 25.12.3：v1.0.3 APK 安装、Portal、授权码、RADIUS PAP、`Session-Timeout`、运行日志、关闭、卸载清理通过
+- Docker OpenWrt 23.05.6：v1.0.3 到 v1.0.4 IPK 原位升级，设置、密钥、名单、备注和授权码全部保留
+- UTM OpenWrt 24.10.6：v1.0.4 IPK 升级、Portal、RFC 8908/8910、设备识别、导入导出、授权码、RADIUS PAP、`Session-Timeout`、关闭和卸载清理通过
+- UTM OpenWrt 25.12.3：v1.0.4 APK 安装与升级、Portal、RFC 8908/8910、设备识别、导入导出、授权码、RADIUS PAP、`Session-Timeout`、`.apk-new` 清理和卸载清理通过
 
 UTM 24/25 卸载检查确认以下项目无残留：
 
@@ -223,6 +239,7 @@ UTM 24/25 卸载检查确认以下项目无残留：
 - `/www/wifidog_v3`
 - `/www/cgi-bin/wifidog_v3`
 - `/etc/config/wifidog_v3`
+- `/etc/config/wifidog_v3.apk-new`
 - `/var/run/wifidog_v3_portal.pid`
 - `/var/lock/wifidog_v3_auth.lock`
 - `inet wifidog_v3` nftables 表

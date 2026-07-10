@@ -60,9 +60,17 @@ The screenshots below were captured from the actual LuCI pages in a Docker OpenW
 - Backup and restore for settings, lists, notes, authorization codes, and portal UI settings.
 - Sensitive configuration protection: backups omit the RADIUS shared secret by default and include it only when explicitly requested.
 - Runtime log viewer for app logs and related syslog entries, with safe clearing and 512 KiB rotation.
+- Unified responsive LuCI administration UI with dark-mode support and desktop/mobile table, form, and status layouts.
 - Passwall2 coexistence using early-priority nftables rules to enforce authorization before traffic splitting where possible.
 - Safe uninstall cleanup for nftables, portal processes, DHCP/RA advertisements, runtime state, and config files.
 - Security hardening with transactional authorization-code counters, input validation, request limits, browser security headers, and startup rollback.
+
+## v1.0.4 Changes
+
+- Declared `/etc/config/wifidog_v3` as a conffile so IPK/APK upgrades preserve settings, lists, notes, authorization codes, and RADIUS secrets.
+- Automatically removes package-manager default copies named `wifidog_v3-opkg` and `wifidog_v3.apk-new` after a protected upgrade.
+- Redesigned the LuCI administration UI with consistent page headers, counters, action areas, tables, forms, responsive layouts, and dark mode.
+- Added real `v1.0.3 -> v1.0.4` IPK/APK upgrade regression coverage for config preservation, service recovery, and temporary-file cleanup.
 
 ## v1.0.3 Changes
 
@@ -104,7 +112,7 @@ Build the OpenWrt 23/24 IPK:
 Output:
 
 ```text
-dist/luci-app-wifidog-v3_1.0.3-1_all.ipk
+dist/luci-app-wifidog-v3_1.0.4-1_all.ipk
 ```
 
 Build the OpenWrt 25 APK:
@@ -116,28 +124,28 @@ Build the OpenWrt 25 APK:
 Output:
 
 ```text
-dist/openwrt25/luci-app-wifidog-v3-1.0.3-r1.apk
+dist/openwrt25/luci-app-wifidog-v3-1.0.4-r1.apk
 ```
 
 ## Install
 
 Latest release packages:
 
-- Release: <https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.3>
-- IPK: `luci-app-wifidog-v3_1.0.3-1_all.ipk`
-- APK: `luci-app-wifidog-v3-1.0.3-r1.apk`
+- Release: <https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.4>
+- IPK: `luci-app-wifidog-v3_1.0.4-1_all.ipk`
+- APK: `luci-app-wifidog-v3-1.0.4-r1.apk`
 
 OpenWrt 23/24:
 
 ```sh
 opkg update
-opkg install /tmp/luci-app-wifidog-v3_1.0.3-1_all.ipk
+opkg install /tmp/luci-app-wifidog-v3_1.0.4-1_all.ipk
 ```
 
 OpenWrt 25:
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.3-r1.apk
+apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.4-r1.apk
 ```
 
 After installation, open LuCI:
@@ -161,6 +169,8 @@ Main UCI config:
 ```text
 /etc/config/wifidog_v3
 ```
+
+The package now declares this path as a conffile. Installing a newer IPK/APK in place preserves existing settings, device lists, and notes.
 
 Common options:
 
@@ -197,6 +207,12 @@ Fast security and source-contract tests:
 python3 test/test_source_contracts.py
 ```
 
+In-place IPK upgrade test:
+
+```sh
+python3 test/test_ipk_upgrade.py
+```
+
 OpenWrt 25 / APK mode:
 
 ```sh
@@ -211,11 +227,11 @@ lua /tmp/utm_smoke.lua
 
 Latest regression results:
 
-- Source-contract tests: `33 passed, 0 failed`
+- Source-contract tests: `36 passed, 0 failed`
 - Docker OpenWrt 23.05.6: `124 passed, 0 failed`
-- UTM OpenWrt 23.05.6: install, portal, authorization codes, RADIUS, Passwall2 coexistence, disable, and uninstall cleanup passed
-- UTM OpenWrt 24.10.6: v1.0.3 IPK install, portal, authorization codes, RADIUS PAP, `Session-Timeout`, runtime logs, disable, and uninstall cleanup passed
-- UTM OpenWrt 25.12.3: v1.0.3 APK install, portal, authorization codes, RADIUS PAP, `Session-Timeout`, runtime logs, disable, and uninstall cleanup passed
+- Docker OpenWrt 23.05.6: in-place v1.0.3 to v1.0.4 IPK upgrade preserved settings, secrets, lists, notes, and authorization codes
+- UTM OpenWrt 24.10.6: v1.0.4 IPK upgrade, Portal, RFC 8908/8910, device identification, backup/restore, authorization codes, RADIUS PAP, `Session-Timeout`, disable, and uninstall cleanup passed
+- UTM OpenWrt 25.12.3: v1.0.4 APK install and upgrade, Portal, RFC 8908/8910, device identification, backup/restore, authorization codes, RADIUS PAP, `Session-Timeout`, `.apk-new` cleanup, and uninstall cleanup passed
 
 UTM 24/25 uninstall checks confirmed no leftovers for:
 
@@ -224,6 +240,7 @@ UTM 24/25 uninstall checks confirmed no leftovers for:
 - `/www/wifidog_v3`
 - `/www/cgi-bin/wifidog_v3`
 - `/etc/config/wifidog_v3`
+- `/etc/config/wifidog_v3.apk-new`
 - `/var/run/wifidog_v3_portal.pid`
 - `/var/lock/wifidog_v3_auth.lock`
 - `inet wifidog_v3` nftables table
