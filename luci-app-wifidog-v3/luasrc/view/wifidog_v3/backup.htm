@@ -29,7 +29,8 @@ function showMessage(msg, type) {
 }
 
 function exportConfig() {
-	window.location.href = withToken(exportUrl);
+	var includeSecrets = document.getElementById('include-secrets').checked ? '1' : '0';
+	window.location.href = withToken(exportUrl) + '&include_secrets=' + includeSecrets;
 }
 
 function readBackupFile(file) {
@@ -98,9 +99,11 @@ if (document.readyState === 'loading') {
 
 	<div class="wifidog-backup-grid">
 		<div class="wifidog-panel">
-			<h4><%:导出配置%></h4>
-			<p><%:将当前 WiFiDog V3 配置导出为 JSON 文件，便于迁移或回滚。%></p>
-			<button type="button" class="wifidog-btn wifidog-btn-primary" onclick="exportConfig()"><%:导出配置%></button>
+				<h4><%:导出配置%></h4>
+				<p><%:将当前 WiFiDog V3 配置导出为 JSON 文件，便于迁移或回滚。%></p>
+				<label><input type="checkbox" id="include-secrets" value="1"> <%:包含 RADIUS 共享密钥等敏感信息%></label>
+				<p class="wifidog-form-hint"><%:默认不导出敏感信息；包含密钥的备份应加密保管。%></p>
+				<button type="button" class="wifidog-btn wifidog-btn-primary" onclick="exportConfig()"><%:导出配置%></button>
 		</div>
 
 		<div class="wifidog-panel">

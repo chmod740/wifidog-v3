@@ -64,7 +64,7 @@ local auth_timeout = s:taboption("auth", Value, "auth_timeout", translate("授�
 	translate("设备授权后的有效时长，默认1440分钟（24小时）"))
 auth_timeout.default = "1440"
 auth_timeout.rmempty = false
-auth_timeout.datatype = "uinteger"
+auth_timeout.datatype = "range(1,525600)"
 
 local radius_enabled = s:taboption("auth", Flag, "radius_enabled", translate("启用RADIUS认证"),
 	translate("允许用户使用 FreeRADIUS 账号密码在 Portal 页面认证"))
@@ -99,14 +99,14 @@ radius_nas_id:depends("radius_enabled", "1")
 local radius_timeout = s:taboption("auth", Value, "radius_timeout", translate("RADIUS超时（秒）"),
 	translate("等待 RADIUS 响应的超时时间"))
 radius_timeout.default = "3"
-radius_timeout.datatype = "uinteger"
+radius_timeout.datatype = "range(1,30)"
 radius_timeout.rmempty = true
 radius_timeout:depends("radius_enabled", "1")
 
 local radius_retries = s:taboption("auth", Value, "radius_retries", translate("RADIUS重试次数"),
 	translate("认证请求无响应时的重试次数"))
 radius_retries.default = "1"
-radius_retries.datatype = "uinteger"
+radius_retries.datatype = "range(1,5)"
 radius_retries.rmempty = true
 radius_retries:depends("radius_enabled", "1")
 

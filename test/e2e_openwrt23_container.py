@@ -26,6 +26,7 @@ RADIUS_SECRET = "testing123"
 WAN_URL = "http://10.89.0.10/"
 PORTAL_URL = "http://10.88.0.2:8080/portal"
 CAPTIVE_API_URL = "http://10.88.0.2:8080/captive-portal/api"
+PREEXISTING_CAPTIVE_URI = "http://10.88.0.2:9090/existing-captive-api"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PKG_MANAGER = os.environ.get("PKG_MANAGER", "opkg")
 
@@ -226,6 +227,14 @@ set wifidog_v3.auth_DISABLED.used_count=0
 set wifidog_v3.auth_DISABLED.expiry_days=30
 set wifidog_v3.auth_DISABLED.created_date={today}
 set wifidog_v3.auth_DISABLED.enabled=0
+set wifidog_v3.auth_RACE=authcode
+set wifidog_v3.auth_RACE.code=RACEONCE
+set wifidog_v3.auth_RACE.max_uses=1
+set wifidog_v3.auth_RACE.used_count=0
+set wifidog_v3.auth_RACE.expiry_days=30
+set wifidog_v3.auth_RACE.auth_minutes=5
+set wifidog_v3.auth_RACE.created_date={today}
+set wifidog_v3.auth_RACE.enabled=1
 commit wifidog_v3
 """
     dexec(ROUTER, "uci", "batch", input_text=batch, check=True)
@@ -300,7 +309,8 @@ c.action_scan_devices()
     ok("Captive probe gets portal page", "网络认证" in client_get(WAN_URL + "generate_204").stdout)
     ok("Apple captive probe gets portal page", "网络认证" in client_get(WAN_URL + "hotspot-detect.html").stdout)
     ok("Windows NCSI probe gets portal page", "网络认证" in client_get(WAN_URL + "ncsi.txt").stdout)
-    ok("Pending TCP 443 is hijacked", "网络认证" in client_get("http://10.89.0.10:443/").stdout)
+    pending_443 = client_get("http://10.89.0.10:443/", timeout=3)
+    ok("Pending TCP 443 is blocked instead of redirected to plaintext portal", pending_443.returncode != 0 and "网络认证" not in pending_443.stdout, pending_443.stdout + pending_443.stderr)
     ok("Pending LAN resource reachable", "网络认证" in client_get(PORTAL_URL).stdout)
     nft_rules = dexec(ROUTER, "nft", "-nn", "list", "table", "inet", "wifidog_v3").stdout
     ok("Early filter is before Passwall2 mangle", "chain early_filter" in nft_rules and ("priority -310" in nft_rules or "priority raw - 10" in nft_rules))
@@ -380,6 +390,10 @@ c.action_remove_device()
     ok("Portal records and parses User-Agent metadata", "record_client_user_agent" in portal_cgi and "parse_user_agent" in portal_cgi and "ua_summary" in portal_cgi)
     ok("Init advertises RFC8910 DHCP/RA options and cleans them", "dhcp-option=114" in init_script and "captive_portal_uri" in init_script and "cleanup_captive_portal_advertisement" in init_script)
     ok("Runtime events are written to app log", "LOG_FILE=\"/var/log/wifidog_v3.log\"" in init_script and "append_runtime_log" in controller and "append_runtime_log" in portal_cgi)
+    direct_headers = dsh(ROUTER, "REQUEST_METHOD=GET REQUEST_URI=/captive-portal/api REMOTE_ADDR=10.88.0.251 /www/wifidog_v3/cgi-bin/wifidog_v3/portal")
+    ok("Portal responses include browser security headers", "X-Content-Type-Options: nosniff" in direct_headers.stdout and "Content-Security-Policy:" in direct_headers.stdout and "Referrer-Policy: no-referrer" in direct_headers.stdout, direct_headers.stdout + direct_headers.stderr)
+    oversized = dsh(ROUTER, "REQUEST_METHOD=POST REQUEST_URI=/portal CONTENT_LENGTH=20000 REMOTE_ADDR=10.88.0.251 /www/wifidog_v3/cgi-bin/wifidog_v3/portal </dev/null")
+    ok("Portal rejects oversized POST bodies with 413", "Status: 413 Payload Too Large" in oversized.stdout and "请求内容过大" in oversized.stdout, oversized.stdout + oversized.stderr)
     empty_authorized = router_lua('''
 local http = require "luci.http"
 function http.prepare_content(_) end
@@ -399,6 +413,21 @@ local c = require "luci.controller.wifidog_v3"
 c.action_runtime_logs()
 ''')
     ok("Runtime logs endpoint returns app log lines", '"success":true' in runtime_logs.stdout and "Docker runtime log line" in runtime_logs.stdout, runtime_logs.stdout + runtime_logs.stderr)
+    filtered_logs = router_lua('''
+local http = require "luci.http"
+local jsonc = require "luci.jsonc"
+function http.formvalue(k)
+	if k == "lines" then return "1" end
+	if k == "source" then return "app" end
+	if k == "query" then return "needle-only" end
+end
+function http.prepare_content(_) end
+function http.write_json(t) print(jsonc.stringify(t)) end
+os.execute("mkdir -p /var/log && printf '%s\\n' 'noise-line' 'needle-only-line' >> /var/log/wifidog_v3.log")
+local c = require "luci.controller.wifidog_v3"
+c.action_runtime_logs()
+''')
+    ok("Runtime logs endpoint filters literal queries", "needle-only-line" in filtered_logs.stdout and "noise-line" not in filtered_logs.stdout, filtered_logs.stdout + filtered_logs.stderr)
     clear_logs = router_lua('''
 local http = require "luci.http"
 function http.formvalue(_) return nil end
@@ -429,6 +458,18 @@ local c = require "luci.controller.wifidog_v3"
 c.action_scan_devices()
 ''')
     ok("Pending device note can be saved and remains visible", "success" in pending_note.stdout and "门口手机|lease-only-phone" in pending_scan.stdout, pending_note.stdout + pending_note.stderr + pending_scan.stdout + pending_scan.stderr)
+    dsh(ROUTER, "dd if=/dev/zero bs=1024 count=513 2>/dev/null | tr '\\000' X > /var/log/wifidog_v3.log")
+    rotate_note = router_lua('''
+local http = require "luci.http"
+local values = { mac = "DE:AD:BE:EF:67:68", note = "门口手机", ip = "10.88.0.66", hostname = "lease-only-phone" }
+function http.formvalue(k) return values[k] end
+function http.prepare_content(_) end
+function http.write_json(t) print(t.success and "success" or "fail") end
+local c = require "luci.controller.wifidog_v3"
+c.action_update_note()
+''')
+    rotated_log = dsh(ROUTER, "test -s /var/log/wifidog_v3.log.1 && test $(wc -c < /var/log/wifidog_v3.log) -lt 524288")
+    ok("Runtime log rotates at bounded size", "success" in rotate_note.stdout and rotated_log.returncode == 0, rotate_note.stdout + rotate_note.stderr + rotated_log.stderr)
     portal_custom_batch = """
 set wifidog_v3.settings.portal_theme=warm
 set wifidog_v3.settings.portal_title=企业访客网络
@@ -466,6 +507,7 @@ c.action_add_whitelist()
     ok("Saved note follows MAC when pending device moves to whitelist", "success" in pending_to_whitelist.stdout and "whitelist" in whitelist_note and "门口手机" in whitelist_note, pending_to_whitelist.stdout + pending_to_whitelist.stderr + whitelist_note)
     export_config = router_lua('''
 local http = require "luci.http"
+function http.formvalue(_) return nil end
 function http.header(_, _) end
 function http.prepare_content(_) end
 function http.write(s) print(s) end
@@ -474,6 +516,17 @@ c.action_export_config()
 ''')
     ok("Export config includes device notes", "wifidog_v3" in export_config.stdout and "门口手机" in export_config.stdout and "devices" in export_config.stdout, export_config.stdout + export_config.stderr)
     ok("Export config includes User-Agent metadata", "ua_summary" in export_config.stdout and "user_agent" in export_config.stdout, export_config.stdout + export_config.stderr)
+    ok("Default export omits RADIUS shared secret", RADIUS_SECRET not in export_config.stdout and '"sensitive_fields_included":false' in export_config.stdout, export_config.stdout + export_config.stderr)
+    secret_export = router_lua('''
+local http = require "luci.http"
+function http.formvalue(k) if k == "include_secrets" then return "1" end end
+function http.header(_, _) end
+function http.prepare_content(_) end
+function http.write(s) print(s) end
+local c = require "luci.controller.wifidog_v3"
+c.action_export_config()
+''')
+    ok("Explicit sensitive export includes RADIUS shared secret", RADIUS_SECRET in secret_export.stdout and '"sensitive_fields_included":true' in secret_export.stdout, secret_export.stdout + secret_export.stderr)
     remove_whitelist = router_lua('''
 local http = require "luci.http"
 local values = { mac = "DE:AD:BE:EF:67:68" }
@@ -534,6 +587,64 @@ c.action_generate_code()
     generated = dsh(ROUTER, f"uci show wifidog_v3 | grep -q \"code='{ui_code}'\"").returncode == 0
     generated_duration = dsh(ROUTER, "uci show wifidog_v3 | grep -q \"auth_minutes='11'\"").returncode == 0
     ok("Admin auth code generation endpoint stores per-code duration", gen.returncode == 0 and "success:" in gen.stdout and generated and generated_duration, gen.stdout + gen.stderr)
+    duplicate_gen = router_lua(f'''
+local http = require "luci.http"
+local values = {{ code = "{ui_code.lower()}", max_uses = "9", expiry_days = "9", auth_minutes = "9" }}
+function http.formvalue(k) return values[k] end
+function http.prepare_content(_) end
+function http.write_json(t) print((t.success and "success:" or "fail:") .. (t.message or "")) end
+local c = require "luci.controller.wifidog_v3"
+c.action_generate_code()
+''')
+    duplicate_count = dsh(ROUTER, f"uci show wifidog_v3 | grep -c \"code='{ui_code}'\"").stdout.strip()
+    ok("Auth code generation rejects case-insensitive duplicates", "fail:" in duplicate_gen.stdout and "已存在" in duplicate_gen.stdout and duplicate_count == "1", duplicate_gen.stdout + duplicate_gen.stderr + duplicate_count)
+    invalid_duration_code = "BADMIN" + str(int(time.time()))[-6:]
+    invalid_duration = router_lua(f'''
+local http = require "luci.http"
+local values = {{ code = "{invalid_duration_code}", max_uses = "2", expiry_days = "7", auth_minutes = "0" }}
+function http.formvalue(k) return values[k] end
+function http.prepare_content(_) end
+function http.write_json(t) print((t.success and "success:" or "fail:") .. (t.message or "")) end
+local c = require "luci.controller.wifidog_v3"
+c.action_generate_code()
+''')
+    invalid_duration_saved = dsh(ROUTER, f"uci show wifidog_v3 | grep -q \"code='{invalid_duration_code}'\"").returncode == 0
+    ok("Auth code generation rejects zero-minute duration without partial data", "fail:" in invalid_duration.stdout and not invalid_duration_saved, invalid_duration.stdout + invalid_duration.stderr)
+    default_duration_code = "NODEF" + str(int(time.time()))[-6:]
+    default_duration_gen = router_lua(f'''
+local http = require "luci.http"
+local values = {{ code = "{default_duration_code}", max_uses = "2", expiry_days = "7", auth_minutes = "" }}
+function http.formvalue(k) return values[k] end
+function http.prepare_content(_) end
+function http.write_json(t) print((t.success and "success:" or "fail:") .. (t.message or "")) end
+local c = require "luci.controller.wifidog_v3"
+c.action_generate_code()
+''')
+    default_duration_state = dsh(ROUTER, f"section=$(uci show wifidog_v3 | sed -n \"s/^wifidog_v3\\.\\([^.]\\+\\)\\.code='{default_duration_code}'$/\\1/p\"); [ -n \"$section\" ] && uci -q get \"wifidog_v3.$section.auth_minutes\"").stdout.strip()
+    ok("Blank per-code duration is stored as default fallback", "success:" in default_duration_gen.stdout and default_duration_state == "", default_duration_gen.stdout + default_duration_gen.stderr + default_duration_state)
+
+    enabled_before_bad_mac = dsh(ROUTER, "uci -q get wifidog_v3.settings.enabled").stdout.strip()
+    bad_mac = router_lua('''
+local http = require "luci.http"
+local values = { mac = "settings", ip = "10.88.0.99", hostname = "bad", note = "bad" }
+function http.formvalue(k) return values[k] end
+function http.prepare_content(_) end
+function http.write_json(t) print((t.success and "success:" or "fail:") .. (t.message or "")) end
+local c = require "luci.controller.wifidog_v3"
+c.action_add_whitelist()
+''')
+    enabled_after_bad_mac = dsh(ROUTER, "uci -q get wifidog_v3.settings.enabled").stdout.strip()
+    ok("Invalid MAC cannot overwrite settings section", "fail:" in bad_mac.stdout and enabled_after_bad_mac == enabled_before_bad_mac == "1", bad_mac.stdout + bad_mac.stderr + enabled_after_bad_mac)
+
+    count_before_unknown = dsh(ROUTER, "uci -q get wifidog_v3.auth_VIP2026.used_count").stdout.strip()
+    unknown_mac_auth = dsh(ROUTER, "body='action=auth&auth_code=VIP2026'; printf '%s' \"$body\" | REQUEST_METHOD=POST REQUEST_URI=/portal CONTENT_LENGTH=${#body} REMOTE_ADDR=10.88.0.251 /www/wifidog_v3/cgi-bin/wifidog_v3/portal")
+    count_after_unknown = dsh(ROUTER, "uci -q get wifidog_v3.auth_VIP2026.used_count").stdout.strip()
+    ok("Unknown client MAC does not consume auth code", '"success":false' in unknown_mac_auth.stdout and count_before_unknown == count_after_unknown == "0", unknown_mac_auth.stdout + unknown_mac_auth.stderr + count_after_unknown)
+
+    race = dsh(ROUTER, "rm -f /tmp/wifidog_race.*; body='action=auth&auth_code=RACEONCE'; for i in 1 2 3 4 5 6 7 8 9 10; do (printf '%s' \"$body\" | REQUEST_METHOD=POST REQUEST_URI=/portal CONTENT_LENGTH=${#body} REMOTE_ADDR=10.88.0.10 /www/wifidog_v3/cgi-bin/wifidog_v3/portal > /tmp/wifidog_race.$i) & done; wait; grep -l '\"success\":true' /tmp/wifidog_race.* | wc -l")
+    race_used = dsh(ROUTER, "uci -q get wifidog_v3.auth_RACE.used_count").stdout.strip()
+    ok("Concurrent single-use auth code succeeds exactly once", race.stdout.strip() == "1" and race_used == "1", race.stdout + race.stderr + race_used)
+    dsh(ROUTER, f"uci -q delete wifidog_v3.{section}; uci -q commit wifidog_v3; /etc/init.d/wifidog_v3 reload")
 
     auth = client_post(PORTAL_URL, "action=auth&auth_code=VIP2026&redirect_url=http://10.89.0.10/")
     ok("Auth code accepted", '"success":true' in auth.stdout and '"wait_seconds":3' in auth.stdout and '"redirect":"http://10.89.0.10/"' in auth.stdout and '"expires_at":' in auth.stdout and '"expires_at_text":' in auth.stdout and '"valid_text":"5分钟"' in auth.stdout, auth.stdout)
@@ -589,7 +700,8 @@ c.action_update_note()
     ok("Blacklist still allows DHCP before dropping public traffic", dhcp_idx >= 0 and drop_idx >= 0 and dhcp_idx < drop_idx, black_rules)
     blocked = client_get(WAN_URL, timeout=3)
     ok("Blacklist WAN shows blocked portal", blocked.returncode == 0 and "设备已被拉黑" in blocked.stdout and "WAN_OK" not in blocked.stdout, blocked.stdout + blocked.stderr)
-    ok("Blacklist TCP 443 shows blocked portal", "设备已被拉黑" in client_get("http://10.89.0.10:443/").stdout)
+    black_443 = client_get("http://10.89.0.10:443/", timeout=3)
+    ok("Blacklist TCP 443 is blocked without plaintext portal", black_443.returncode != 0 and "设备已被拉黑" not in black_443.stdout, black_443.stdout + black_443.stderr)
     ok("Blacklist portal forbids self-service", "设备已被拉黑" in client_get(PORTAL_URL).stdout)
     black_api = client_get(CAPTIVE_API_URL).stdout
     ok("RFC8908 API reports blacklisted client captive", '"captive":true' in black_api and '"user-portal-url":"' in black_api, black_api)
@@ -608,10 +720,12 @@ c.action_update_note()
     ok("Manual auth source recorded", manual_source == "manual", manual_source)
     ok("Manual authorize WAN access", "WAN_OK" in client_get(WAN_URL).stdout)
 
-    set_device(mac, "authorized", "1")
+    set_device(mac, "authorized", "1", source="manual", note="过期后保留")
     dexec(ROUTER, "/etc/init.d/wifidog_v3", "check_expiry_cron", check=True)
     dexec(ROUTER, "/etc/init.d/wifidog_v3", "reload", check=True)
     ok("Expired authorization returns to pending", "网络认证" in client_get(WAN_URL).stdout)
+    expired_metadata = dsh(ROUTER, f"uci -q get wifidog_v3.{section}.type; uci -q get wifidog_v3.{section}.note; uci -q get wifidog_v3.{section}.auth_expiry").stdout
+    ok("Expired authorization preserves MAC-bound metadata", "pending" in expired_metadata and "过期后保留" in expired_metadata and expired_metadata.rstrip().endswith("0"), expired_metadata)
 
     backup_payload = json.dumps({
         "app": "wifidog_v3",
@@ -675,7 +789,54 @@ c.action_import_config()
 ''')
     imported = dsh(ROUTER, "uci -q get wifidog_v3.aa_bb_cc_dd_ee_01.type; uci -q get wifidog_v3.aa_bb_cc_dd_ee_01.note; uci -q get wifidog_v3.aa_bb_cc_dd_ee_02.type; uci -q get wifidog_v3.aa_bb_cc_dd_ee_02.note; uci -q get wifidog_v3.settings.portal_title; uci -q get wifidog_v3.settings.portal_theme; uci show wifidog_v3 | grep -q \"code='BACKUP123'\" && echo CODE_OK; uci show wifidog_v3 | grep -q \"auth_minutes='60'\" && echo AUTH_MINUTES_OK").stdout
     ok("Import config restores lists, notes, auth codes, per-code duration and portal settings", "success:" in import_config.stdout and "whitelist" in imported and "备份白名单" in imported and "blacklist" in imported and "备份黑名单" in imported and "备份认证页" in imported and "dark" in imported and "CODE_OK" in imported and "AUTH_MINUTES_OK" in imported, import_config.stdout + import_config.stderr + imported)
+    invalid_import = router_lua('''
+local http = require "luci.http"
+local values = { config_json = [[{"app":"another_app","settings":{"portal_title":"SHOULD_NOT_APPLY"}}]] }
+function http.formvalue(k) return values[k] end
+function http.prepare_content(_) end
+function http.write_json(t) print((t.success and "success:" or "fail:") .. (t.message or "")) end
+local c = require "luci.controller.wifidog_v3"
+c.action_import_config()
+''')
+    title_after_invalid_import = dsh(ROUTER, "uci -q get wifidog_v3.settings.portal_title").stdout.strip()
+    ok("Rejected backup leaves committed configuration unchanged", "fail:" in invalid_import.stdout and title_after_invalid_import == "备份认证页", invalid_import.stdout + invalid_import.stderr + title_after_invalid_import)
+    malformed_import = router_lua('''
+local http = require "luci.http"
+local values = { config_json = "{not-json" }
+function http.formvalue(k) return values[k] end
+function http.prepare_content(_) end
+function http.write_json(t) print((t.success and "success:" or "fail:") .. (t.message or "")) end
+local c = require "luci.controller.wifidog_v3"
+c.action_import_config()
+''')
+    title_after_malformed_import = dsh(ROUTER, "uci -q get wifidog_v3.settings.portal_title").stdout.strip()
+    ok("Malformed backup JSON is rejected without changing configuration", "fail:" in malformed_import.stdout and title_after_malformed_import == "备份认证页", malformed_import.stdout + malformed_import.stderr + title_after_malformed_import)
 
+    dexec(ROUTER, "uci", "set", "wifidog_v3.settings.auth_code_enabled=0")
+    dexec(ROUTER, "uci", "set", "wifidog_v3.settings.radius_enabled=0")
+    dexec(ROUTER, "uci", "commit", "wifidog_v3")
+    no_self_service_page = client_get(PORTAL_URL).stdout
+    no_self_service_post = client_post(PORTAL_URL, "action=auth&auth_code=BACKUP123")
+    ok("Disabling all self-service methods keeps them disabled", "管理员暂未启用自助认证" in no_self_service_page and "disabled" in no_self_service_page and '"success":false' in no_self_service_post.stdout, no_self_service_page[:300] + no_self_service_post.stdout)
+    dexec(ROUTER, "uci", "set", "wifidog_v3.settings.auth_code_enabled=1")
+    dexec(ROUTER, "uci", "commit", "wifidog_v3")
+
+    dexec(ROUTER, "/etc/init.d/wifidog_v3", "stop", check=True)
+    dexec(ROUTER, "mv", "/www/wifidog_v3/cgi-bin/wifidog_v3/portal", "/www/wifidog_v3/cgi-bin/wifidog_v3/portal.off", check=True)
+    failed_start = dexec(ROUTER, "/etc/init.d/wifidog_v3", "start")
+    rollback_clean = dsh(ROUTER, "! nft list table inet wifidog_v3 >/dev/null 2>&1 && test ! -e /tmp/dnsmasq.d/wifidog_v3.conf && ! ps w | grep '[u]httpd' | grep -q '/www/wifidog_v3'")
+    ok("Portal startup failure rolls back firewall and captive advertisement", failed_start.returncode != 0 and rollback_clean.returncode == 0, failed_start.stdout + failed_start.stderr + rollback_clean.stderr)
+    dexec(ROUTER, "mv", "/www/wifidog_v3/cgi-bin/wifidog_v3/portal.off", "/www/wifidog_v3/cgi-bin/wifidog_v3/portal", check=True)
+    dexec(ROUTER, "/etc/init.d/wifidog_v3", "start", check=True)
+
+    # Verify that enabling and disabling the service preserves a pre-existing
+    # RFC8910 advertisement owned by another component.
+    dexec(ROUTER, "uci", "set", "wifidog_v3.settings.enabled=0")
+    dexec(ROUTER, "uci", "commit", "wifidog_v3")
+    dexec(ROUTER, "/etc/init.d/wifidog_v3", "stop", check=True)
+    dexec(ROUTER, "uci", "set", f"dhcp.lan.captive_portal_uri={PREEXISTING_CAPTIVE_URI}")
+    dexec(ROUTER, "uci", "commit", "dhcp")
+    dsh(ROUTER, "uci -q delete wifidog_v3.settings.odhcpd_prev_captive_portal_uri_saved; uci -q delete wifidog_v3.settings.odhcpd_prev_captive_portal_uri_was_set; uci -q delete wifidog_v3.settings.odhcpd_prev_captive_portal_uri; uci -q commit wifidog_v3")
     dexec(ROUTER, "uci", "set", "wifidog_v3.settings.enabled=1")
     dexec(ROUTER, "uci", "commit", "wifidog_v3")
     dexec(ROUTER, "/etc/init.d/wifidog_v3", "restart", check=True)
@@ -688,7 +849,8 @@ c.action_import_config()
     ok("Disabled system cleans nft table", dexec(ROUTER, "nft", "list", "table", "inet", "wifidog_v3").returncode != 0)
     ok("Disabled system stops portal process", dsh(ROUTER, "ps w | grep '[u]httpd' | grep -q '/www/wifidog_v3'").returncode != 0)
     ok("Disabled system removes captive DHCP advertisement", dexec(ROUTER, "test", "!", "-e", "/tmp/dnsmasq.d/wifidog_v3.conf").returncode == 0)
-    ok("Disabled system restores odhcpd captive URI", dexec(ROUTER, "uci", "-q", "get", "dhcp.lan.captive_portal_uri").returncode != 0)
+    restored_uri = dexec(ROUTER, "uci", "-q", "get", "dhcp.lan.captive_portal_uri")
+    ok("Disabled system restores pre-existing odhcpd captive URI", restored_uri.returncode == 0 and restored_uri.stdout.strip() == PREEXISTING_CAPTIVE_URI, restored_uri.stdout + restored_uri.stderr)
     ok("Disabled system removes short IP session cache", dexec(ROUTER, "test", "!", "-e", "/tmp/wifidog_v3_ip_sessions").returncode == 0)
 
     remove_package()
@@ -699,9 +861,12 @@ c.action_import_config()
     ok("Uninstall removes portal CGI files", dexec(ROUTER, "test", "!", "-e", "/www/wifidog_v3").returncode == 0 and dexec(ROUTER, "test", "!", "-e", "/www/cgi-bin/wifidog_v3").returncode == 0)
     ok("Uninstall removes captive DHCP advertisement", dexec(ROUTER, "test", "!", "-e", "/tmp/dnsmasq.d/wifidog_v3.conf").returncode == 0)
     ok("Uninstall removes short IP session cache", dexec(ROUTER, "test", "!", "-e", "/tmp/wifidog_v3_ip_sessions").returncode == 0)
-    ok("Uninstall leaves no odhcpd captive URI", dexec(ROUTER, "uci", "-q", "get", "dhcp.lan.captive_portal_uri").returncode != 0)
+    uninstall_uri = dexec(ROUTER, "uci", "-q", "get", "dhcp.lan.captive_portal_uri")
+    ok("Uninstall preserves pre-existing odhcpd captive URI", uninstall_uri.returncode == 0 and uninstall_uri.stdout.strip() == PREEXISTING_CAPTIVE_URI, uninstall_uri.stdout + uninstall_uri.stderr)
     ok("Uninstall removes config file", dexec(ROUTER, "test", "!", "-e", "/etc/config/wifidog_v3").returncode == 0)
     ok("Uninstall leaves WAN access working", "WAN_OK" in client_get(WAN_URL).stdout)
+    dexec(ROUTER, "uci", "-q", "delete", "dhcp.lan.captive_portal_uri")
+    dexec(ROUTER, "uci", "-q", "commit", "dhcp")
     stop_radius()
 
     print(f"\nResult: {passed} passed, {failed} failed")

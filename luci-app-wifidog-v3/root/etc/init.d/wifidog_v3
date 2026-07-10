@@ -6,6 +6,7 @@ STOP=15
 NAME="wifidog_v3"
 NFT_TABLE="wifidog_v3"
 LOG_FILE="/var/log/wifidog_v3.log"
+LOG_MAX_BYTES=524288
 PORTAL_ROOT="/www/wifidog_v3"
 PORTAL_CGI="/www/wifidog_v3/cgi-bin/wifidog_v3/portal"
 PORTAL_PID="/var/run/wifidog_v3_portal.pid"
@@ -18,6 +19,14 @@ EXTRA_HELP="	check_expiry_cron	Remove expired temporary authorizations"
 _log() {
 	logger -t "$NAME" "$1"
 	mkdir -p /var/log
+	if [ -f "$LOG_FILE" ]; then
+		local size
+		size=$(wc -c < "$LOG_FILE" 2>/dev/null)
+		if [ "${size:-0}" -ge "$LOG_MAX_BYTES" ] 2>/dev/null; then
+			rm -f "$LOG_FILE.1"
+			mv "$LOG_FILE" "$LOG_FILE.1" 2>/dev/null || true
+		fi
+	fi
 	printf '%s [service] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG_FILE" 2>/dev/null || true
 }
 
@@ -543,7 +552,6 @@ setup_nft() {
 
 	config_foreach add_nat_bypass_device device
 	echo "add rule inet $NFT_TABLE portal_nat tcp dport 80 redirect to :$portal_port" >> "$NFT_FILE"
-	echo "add rule inet $NFT_TABLE portal_nat tcp dport 443 redirect to :$portal_port" >> "$NFT_FILE"
 
 	config_foreach add_filter_device device
 	{
@@ -578,7 +586,11 @@ check_device_expiry() {
 
 	if [ "$type" = "authorized" ] && [ -n "$auth_expiry" ] && [ "$auth_expiry" -le "$(date +%s)" ] 2>/dev/null; then
 		_log "Authorization expired for MAC: $mac"
-		uci -q delete "wifidog_v3.$cfg"
+		uci -q set "wifidog_v3.$cfg.type=pending"
+		uci -q set "wifidog_v3.$cfg.auth_expiry=0"
+		uci -q delete "wifidog_v3.$cfg.auth_source" 2>/dev/null || true
+		uci -q delete "wifidog_v3.$cfg.auth_code" 2>/dev/null || true
+		uci -q delete "wifidog_v3.$cfg.radius_user" 2>/dev/null || true
 	fi
 }
 
@@ -596,12 +608,22 @@ start_service() {
 		cleanup_firewall
 		cleanup_captive_portal_advertisement
 		rm -f /tmp/wifidog_v3_ip_sessions 2>/dev/null
+		rm -rf /var/lock/wifidog_v3_auth.lock 2>/dev/null
 		return 0
 	fi
 
 	setup_captive_portal_advertisement
-	setup_nft || return 1
-	start_portal_server || return 1
+	if ! setup_nft; then
+		cleanup_captive_portal_advertisement
+		_log "Startup rolled back because nftables setup failed"
+		return 1
+	fi
+	if ! start_portal_server; then
+		cleanup_firewall
+		cleanup_captive_portal_advertisement
+		_log "Startup rolled back because portal startup failed"
+		return 1
+	fi
 	start_expiry_worker
 }
 
@@ -611,6 +633,7 @@ stop_service() {
 	cleanup_firewall
 	cleanup_captive_portal_advertisement
 	rm -f /tmp/wifidog_v3_ip_sessions 2>/dev/null
+	rm -rf /var/lock/wifidog_v3_auth.lock 2>/dev/null
 	_log "WiFiDog V3 service stopped"
 }
 
@@ -630,8 +653,17 @@ reload_service() {
 	fi
 
 	setup_captive_portal_advertisement
-	setup_nft || return 1
-	start_portal_server
+	if ! setup_nft; then
+		cleanup_captive_portal_advertisement
+		_log "Reload rolled back because nftables setup failed"
+		return 1
+	fi
+	if ! start_portal_server; then
+		cleanup_firewall
+		cleanup_captive_portal_advertisement
+		_log "Reload rolled back because portal startup failed"
+		return 1
+	fi
 	start_expiry_worker
 	_log "WiFiDog V3 service reloaded"
 }

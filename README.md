@@ -57,9 +57,21 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
   - iOS、Android、Windows、NetworkManager 等旧探测路径
 - Portal 页面：使用独立 uhttpd 实例，支持主题切换和后台自定义提示词、标题、按钮文案。
 - 配置备份恢复：支持导入/导出系统设置、黑白名单、备注、授权码和 Portal 页面配置。
-- 运行日志：后台可查看本系统运行日志和相关 syslog，并支持清空本系统日志。
+- 敏感配置保护：备份默认不包含 RADIUS 共享密钥，可按需显式导出完整配置。
+- 运行日志：后台可查看本系统运行日志和相关 syslog，支持清空和 512 KiB 自动轮转。
 - Passwall2 共存：使用更早优先级的 nftables 规则，尽量在分流规则前完成认证控制。
 - 安全卸载：卸载时清理 nftables、Portal 进程、DHCP/RA 广告、运行状态和配置文件。
+- 安全加固：授权码计数使用跨进程事务锁，包含输入校验、请求体限制、安全响应头和服务启动失败回滚。
+
+## v1.0.3 更新
+
+- 删除旧的免登录 LuCI 认证入口，统一由独立 Portal CGI 执行黑名单和认证开关检查。
+- 修复授权码管理页存储型 XSS 和异常 JSON 数组导致的页面错误。
+- 授权码在确认客户端 MAC 后才计数；并发使用单次码时只允许一个请求成功。
+- 临时授权过期后转回待授权状态，并保留 MAC 绑定的备注、主机名和 UA。
+- nftables 或 Portal 启动失败时自动回滚防火墙和 DHCP/RA 广告。
+- 未授权 HTTP 跳转 Portal；HTTPS/443 直接阻断，不进行不可靠的明文或自签名劫持。
+- 增加日志轮转、16 KiB Portal 请求上限、浏览器安全响应头和 RADIUS 临时文件权限保护。
 
 ## 支持版本
 
@@ -91,7 +103,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 输出：
 
 ```text
-dist/luci-app-wifidog-v3_1.0.2-1_all.ipk
+dist/luci-app-wifidog-v3_1.0.3-1_all.ipk
 ```
 
 构建 OpenWrt 25 APK：
@@ -103,28 +115,28 @@ dist/luci-app-wifidog-v3_1.0.2-1_all.ipk
 输出：
 
 ```text
-dist/openwrt25/luci-app-wifidog-v3-1.0.2-r1.apk
+dist/openwrt25/luci-app-wifidog-v3-1.0.3-r1.apk
 ```
 
 ## 安装
 
 最新发布包：
 
-- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.2>
-- IPK：`luci-app-wifidog-v3_1.0.2-1_all.ipk`
-- APK：`luci-app-wifidog-v3-1.0.2-r1.apk`
+- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.3>
+- IPK：`luci-app-wifidog-v3_1.0.3-1_all.ipk`
+- APK：`luci-app-wifidog-v3-1.0.3-r1.apk`
 
 OpenWrt 23/24：
 
 ```sh
 opkg update
-opkg install /tmp/luci-app-wifidog-v3_1.0.2-1_all.ipk
+opkg install /tmp/luci-app-wifidog-v3_1.0.3-1_all.ipk
 ```
 
 OpenWrt 25：
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.2-r1.apk
+apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.3-r1.apk
 ```
 
 安装后进入 LuCI：
@@ -178,6 +190,12 @@ Docker 回归：
 python3 test/e2e_openwrt23_container.py
 ```
 
+快速安全与源码契约测试：
+
+```sh
+python3 test/test_source_contracts.py
+```
+
 OpenWrt 25 / APK 模式：
 
 ```sh
@@ -192,10 +210,11 @@ lua /tmp/utm_smoke.lua
 
 最近回归结果：
 
-- Docker OpenWrt 23.05.6：`107 passed, 0 failed`
+- 源码契约测试：`33 passed, 0 failed`
+- Docker OpenWrt 23.05.6：`124 passed, 0 failed`
 - UTM OpenWrt 23.05.6：安装、Portal、授权码、RADIUS、Passwall2 共存、关闭、卸载清理通过
-- UTM OpenWrt 24.10.6：安装、Portal、授权码、RADIUS PAP、`Session-Timeout`、运行日志、关闭、卸载清理通过
-- UTM OpenWrt 25.12.3：APK 安装、Portal、授权码、RADIUS PAP、`Session-Timeout`、运行日志、关闭、卸载清理通过
+- UTM OpenWrt 24.10.6：v1.0.3 IPK 安装、Portal、授权码、RADIUS PAP、`Session-Timeout`、运行日志、关闭、卸载清理通过
+- UTM OpenWrt 25.12.3：v1.0.3 APK 安装、Portal、授权码、RADIUS PAP、`Session-Timeout`、运行日志、关闭、卸载清理通过
 
 UTM 24/25 卸载检查确认以下项目无残留：
 
@@ -205,6 +224,7 @@ UTM 24/25 卸载检查确认以下项目无残留：
 - `/www/cgi-bin/wifidog_v3`
 - `/etc/config/wifidog_v3`
 - `/var/run/wifidog_v3_portal.pid`
+- `/var/lock/wifidog_v3_auth.lock`
 - `inet wifidog_v3` nftables 表
 
 ## 卸载
@@ -230,9 +250,11 @@ apk del luci-app-wifidog-v3
 - `/tmp/dnsmasq.d/wifidog_v3.conf`
 - `dhcp.lan.captive_portal_uri`
 - `/tmp/wifidog_v3_ip_sessions`
+- `/var/lock/wifidog_v3_auth.lock`
+- `/var/log/wifidog_v3.log` 和轮转文件
 
 ## 注意事项
 
-- HTTPS 劫持无法避免证书警告，这是 Captive Portal 的常见限制；推荐依赖系统 Captive Portal 探测触发认证页。
+- 未授权设备的 HTTPS/443 会被阻断，不会尝试伪造目标站点证书或返回明文 Portal；认证页依靠 RFC 8910、系统探测 URL 和 HTTP 请求触发。
 - iOS 认证弹窗关闭依赖系统重新探测网络状态，页面会轮询 Captive Portal API 并触发兼容探测作为兜底。
 - 如果客户端启用随机 MAC，授权、备注和名单状态会绑定到当前随机 MAC。

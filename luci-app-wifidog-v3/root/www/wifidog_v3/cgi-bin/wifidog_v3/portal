@@ -9,16 +9,32 @@ local function shell_quote(s)
 	return "'" .. s:gsub("'", "'\\''") .. "'"
 end
 
+local function command_ok(cmd)
+	local ok, _, status = os.execute(cmd .. " >/dev/null 2>&1")
+	return ok == true or ok == 0 or status == 0
+end
+
 local function run(cmd)
-	os.execute(cmd .. " >/dev/null 2>&1")
+	return command_ok(cmd)
 end
 
 local LOG_FILE = "/var/log/wifidog_v3.log"
+local LOG_MAX_BYTES = 512 * 1024
+local MAX_REQUEST_BODY = 16 * 1024
+local IP_SESSION_MAX_ENTRIES = 1024
+local AUTH_LOCK_DIR = "/var/lock/wifidog_v3_auth.lock"
 
 local function append_runtime_log(message)
 	message = tostring(message or ""):gsub("[\r\n]", " "):sub(1, 512)
 	if message == "" then
 		return
+	end
+	local current = io.open(LOG_FILE, "r")
+	local size = current and current:seek("end") or 0
+	if current then current:close() end
+	if size >= LOG_MAX_BYTES then
+		os.remove(LOG_FILE .. ".1")
+		os.rename(LOG_FILE, LOG_FILE .. ".1")
 	end
 	local fp = io.open(LOG_FILE, "a")
 	if fp then
@@ -47,15 +63,43 @@ local function uci_get(path, default)
 end
 
 local function uci_set(expr)
-	run("uci -q set " .. shell_quote(expr))
+	return run("uci -q set " .. shell_quote(expr))
 end
 
 local function uci_delete(path)
-	run("uci -q delete " .. shell_quote(path))
+	return run("uci -q delete " .. shell_quote(path))
 end
 
 local function uci_commit()
-	run("uci -q commit wifidog_v3")
+	return run("uci -q commit wifidog_v3")
+end
+
+local function uci_revert()
+	run("uci -q revert wifidog_v3")
+end
+
+local function acquire_auth_lock()
+	run("mkdir -p /var/lock")
+	for _ = 1, 60 do
+		if command_ok("mkdir " .. shell_quote(AUTH_LOCK_DIR)) then
+			local fp = io.open(AUTH_LOCK_DIR .. "/created", "w")
+			if fp then fp:write(tostring(os.time()), "\n"); fp:close() end
+			return true
+		end
+		local stamp = io.open(AUTH_LOCK_DIR .. "/created", "r")
+		local created = stamp and tonumber(stamp:read("*l") or "0") or 0
+		if stamp then stamp:close() end
+		if (created > 0 and os.time() - created > 15) or (created == 0 and _ > 20) then
+			run("rm -rf " .. shell_quote(AUTH_LOCK_DIR))
+		else
+			run("sleep 0.05")
+		end
+	end
+	return false
+end
+
+local function release_auth_lock()
+	run("rm -rf " .. shell_quote(AUTH_LOCK_DIR))
 end
 
 local function get_router_ip()
@@ -122,7 +166,7 @@ local function portal_base_url()
 end
 
 local function reload_firewall()
-	run("/etc/init.d/wifidog_v3 reload")
+	os.execute("(/etc/init.d/wifidog_v3 reload >/dev/null 2>&1) &")
 end
 
 local function urldecode(s)
@@ -438,8 +482,12 @@ end
 local function md5_binary(data)
 	local unique = tostring({}):gsub("[^0-9A-Fa-f]", "")
 	local name = "/tmp/wifidog_v3_md5_" .. tostring(os.time()) .. "_" .. unique
+	if not command_ok("umask 077; : > " .. shell_quote(name)) then
+		return nil, "无法创建临时文件"
+	end
 	local fp = io.open(name, "wb")
 	if not fp then
+		os.remove(name)
 		return nil, "无法创建临时文件"
 	end
 	fp:write(data)
@@ -647,7 +695,7 @@ local function record_client_user_agent(mac, ip, path)
 	end
 	local old_summary = existing and existing.ua_summary or ""
 	local last_seen = tonumber((existing and existing.ua_seen) or "0") or 0
-	if existing and existing.user_agent == ua and tostring(existing.ip or "") == tostring(ip or "") and now - last_seen < 300 then
+	if existing and existing.user_agent == ua and tostring(existing.ip or "") == tostring(ip or "") and now - last_seen < 86400 then
 		return
 	end
 
@@ -682,6 +730,7 @@ local function load_ip_sessions()
 	local sessions = {}
 	local now = os.time()
 	local changed = false
+	local count = 0
 	local fp = io.open(IP_SESSION_FILE, "r")
 	if not fp then
 		return sessions, false
@@ -691,7 +740,12 @@ local function load_ip_sessions()
 		local expires, ip, mac = line:match("^(%d+)%s+(%S+)%s+(%S+)")
 		expires = tonumber(expires or "0") or 0
 		if expires > now and valid_ipv4(ip) and mac and mac ~= "" then
-			sessions[ip] = { expires = expires, mac = mac:upper() }
+			if count < IP_SESSION_MAX_ENTRIES then
+				sessions[ip] = { expires = expires, mac = mac:upper() }
+				count = count + 1
+			else
+				changed = true
+			end
 		else
 			changed = true
 		end
@@ -701,17 +755,25 @@ local function load_ip_sessions()
 end
 
 local function save_ip_sessions(sessions)
-	local fp = io.open(IP_SESSION_FILE, "w")
+	local suffix = tostring({}):gsub("[^0-9A-Fa-f]", "")
+	local tmp = IP_SESSION_FILE .. "." .. suffix
+	local fp = io.open(tmp, "w")
 	if not fp then
 		return
 	end
 
+	local count = 0
 	for ip, item in pairs(sessions or {}) do
-		if valid_ipv4(ip) and item and item.mac and tonumber(item.expires or "0") then
+		if count < IP_SESSION_MAX_ENTRIES and valid_ipv4(ip) and item and item.mac and tonumber(item.expires or "0") then
 			fp:write(tostring(item.expires), " ", ip, " ", tostring(item.mac):upper(), "\n")
+			count = count + 1
 		end
 	end
 	fp:close()
+	run("chmod 600 " .. shell_quote(tmp))
+	if not os.rename(tmp, IP_SESSION_FILE) then
+		os.remove(tmp)
+	end
 end
 
 local function remember_ip_session(ip, mac, auth_expiry)
@@ -824,6 +886,9 @@ local function radius_authenticate(username, password, client_mac, client_ip)
 	local port = tonumber(uci_get("wifidog_v3.settings.radius_port", "1812")) or 1812
 	local timeout = tonumber(uci_get("wifidog_v3.settings.radius_timeout", "3")) or 3
 	local retries = tonumber(uci_get("wifidog_v3.settings.radius_retries", "1")) or 1
+	if port < 1 or port > 65535 then port = 1812 end
+	if timeout < 1 or timeout > 30 then timeout = 3 end
+	if retries < 1 or retries > 5 then retries = 1 end
 	local nas_id = uci_get("wifidog_v3.settings.radius_nas_id", "wifidog-v3")
 	if nas_id == "" then
 		nas_id = "wifidog-v3"
@@ -861,7 +926,7 @@ local function radius_authenticate(username, password, client_mac, client_ip)
 	udp:settimeout(timeout)
 
 	local response
-	for _ = 1, math.max(1, retries) do
+	for _ = 1, retries do
 		udp:sendto(packet, server, port)
 		response = udp:receivefrom()
 		if response and #response >= 20 then
@@ -944,23 +1009,23 @@ local function validate_auth_code(code)
 		end
 	end
 
-	uci_set("wifidog_v3." .. found_name .. ".used_count=" .. tostring(used_count + 1))
-	uci_commit()
-	return true, "认证成功", code, found.auth_minutes or ""
+	return true, "认证成功", code, found.auth_minutes or "", found_name, used_count
 end
 
 local function delete_devices_by_mac(mac)
 	local target = tostring(mac or ""):upper()
+	local ok = true
 	for name, section in pairs(iter_uci_sections()) do
 		if section[".type"] == "device" and section.mac and tostring(section.mac):upper() == target then
-			uci_delete("wifidog_v3." .. name)
+			ok = uci_delete("wifidog_v3." .. name) and ok
 		end
 	end
+	return ok
 end
 
-local function authorize_client(mac, ip, source, auth_code, auth_minutes, auth_seconds)
+local function stage_authorized_client(mac, ip, source, auth_code, auth_minutes, auth_seconds)
 	if not mac or mac == "" then
-		return false
+		return false, "无法识别客户端MAC地址"
 	end
 
 	local saved = get_device_by_mac(mac) or {}
@@ -970,44 +1035,111 @@ local function authorize_client(mac, ip, source, auth_code, auth_minutes, auth_s
 	local section = mac_to_section(mac)
 	local auth_source = tostring(source or "code")
 
-	delete_devices_by_mac(mac)
-	uci_set("wifidog_v3." .. section .. "=device")
-	uci_set("wifidog_v3." .. section .. ".mac=" .. mac:upper())
-	uci_set("wifidog_v3." .. section .. ".ip=" .. tostring(ip or ""))
-	uci_set("wifidog_v3." .. section .. ".type=authorized")
-	uci_set("wifidog_v3." .. section .. ".auth_expiry=" .. tostring(expiry))
-	uci_set("wifidog_v3." .. section .. ".auth_source=" .. auth_source)
+	local ok = delete_devices_by_mac(mac)
+	ok = uci_set("wifidog_v3." .. section .. "=device") and ok
+	ok = uci_set("wifidog_v3." .. section .. ".mac=" .. mac:upper()) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".ip=" .. clean_text(ip or "", 64)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".type=authorized") and ok
+	ok = uci_set("wifidog_v3." .. section .. ".auth_expiry=" .. tostring(expiry)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".auth_source=" .. auth_source) and ok
 	if auth_source == "radius" then
-		uci_set("wifidog_v3." .. section .. ".auth_code=")
-		uci_set("wifidog_v3." .. section .. ".radius_user=" .. clean_text(auth_code or "", 128))
+		ok = uci_set("wifidog_v3." .. section .. ".auth_code=") and ok
+		ok = uci_set("wifidog_v3." .. section .. ".radius_user=" .. clean_text(auth_code or "", 128)) and ok
 	else
-		uci_set("wifidog_v3." .. section .. ".auth_code=" .. tostring(auth_code or ""))
-		uci_set("wifidog_v3." .. section .. ".radius_user=")
+		ok = uci_set("wifidog_v3." .. section .. ".auth_code=" .. clean_text(auth_code or "", 128)) and ok
+		ok = uci_set("wifidog_v3." .. section .. ".radius_user=") and ok
 	end
-	uci_set("wifidog_v3." .. section .. ".note=" .. clean_text(saved.note or "", 256))
-	uci_set("wifidog_v3." .. section .. ".hostname=" .. clean_text(saved.hostname or "", 128))
-	uci_set("wifidog_v3." .. section .. ".user_agent=" .. clean_text(saved.user_agent or "", 512))
-	uci_set("wifidog_v3." .. section .. ".ua_device_type=" .. clean_text(saved.ua_device_type or "", 32))
-	uci_set("wifidog_v3." .. section .. ".ua_os=" .. clean_text(saved.ua_os or "", 64))
-	uci_set("wifidog_v3." .. section .. ".ua_browser=" .. clean_text(saved.ua_browser or "", 64))
-	uci_set("wifidog_v3." .. section .. ".ua_model=" .. clean_text(saved.ua_model or "", 96))
-	uci_set("wifidog_v3." .. section .. ".ua_summary=" .. clean_text(saved.ua_summary or "", 192))
-	uci_set("wifidog_v3." .. section .. ".ua_seen=" .. clean_text(saved.ua_seen or "", 32))
-	uci_set("wifidog_v3." .. section .. ".created=" .. tostring(now))
-	uci_commit()
+	ok = uci_set("wifidog_v3." .. section .. ".note=" .. clean_text(saved.note or "", 256)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".hostname=" .. clean_text(saved.hostname or "", 128)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".user_agent=" .. clean_text(saved.user_agent or "", 512)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".ua_device_type=" .. clean_text(saved.ua_device_type or "", 32)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".ua_os=" .. clean_text(saved.ua_os or "", 64)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".ua_browser=" .. clean_text(saved.ua_browser or "", 64)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".ua_model=" .. clean_text(saved.ua_model or "", 96)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".ua_summary=" .. clean_text(saved.ua_summary or "", 192)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".ua_seen=" .. clean_text(saved.ua_seen or "", 32)) and ok
+	ok = uci_set("wifidog_v3." .. section .. ".created=" .. tostring(now)) and ok
+	if not ok then
+		return false, "授权状态写入失败"
+	end
+	return true, expiry, timeout, auth_source
+end
+
+local function complete_authorization(mac, ip, auth_source, expiry, timeout)
 	record_client_user_agent(mac, ip)
 	remember_ip_session(ip, mac, expiry)
 	append_runtime_log("自助认证成功 MAC=" .. mac:upper() .. " IP=" .. tostring(ip or "") .. " 方式=" .. auth_source .. " 有效秒数=" .. tostring(timeout))
 	reload_firewall()
+end
+
+local function with_auth_lock(fn)
+	if not acquire_auth_lock() then
+		return false, "认证请求繁忙，请稍后重试"
+	end
+	local call_ok, a, b, c, d = pcall(fn)
+	release_auth_lock()
+	if not call_ok then
+		uci_revert()
+		append_runtime_log("认证事务异常：" .. tostring(a or "unknown"))
+		return false, "认证处理失败，请稍后重试"
+	end
+	return a, b, c, d
+end
+
+local function authorize_client(mac, ip, source, auth_code, auth_minutes, auth_seconds)
+	local ok, expiry, timeout, auth_source = with_auth_lock(function()
+		local staged, staged_expiry, staged_timeout, staged_source = stage_authorized_client(mac, ip, source, auth_code, auth_minutes, auth_seconds)
+		if not staged then
+			uci_revert()
+			return false, staged_expiry
+		end
+		if not uci_commit() then
+			uci_revert()
+			return false, "授权配置提交失败"
+		end
+		return true, staged_expiry, staged_timeout, staged_source
+	end)
+	if not ok then return false, expiry end
+	complete_authorization(mac, ip, auth_source, expiry, timeout)
 	return true, expiry, timeout
+end
+
+local function authorize_with_code(code, mac, ip)
+	if not mac or mac == "" then
+		return false, "无法识别客户端MAC地址"
+	end
+	local ok, message, expiry, timeout = with_auth_lock(function()
+		local valid, reason, used_code, auth_minutes, code_section, used_count = validate_auth_code(code)
+		if not valid then return false, reason end
+		local staged, staged_expiry, staged_timeout = stage_authorized_client(mac, ip, "code", used_code, auth_minutes)
+		if not staged then
+			uci_revert()
+			return false, staged_expiry
+		end
+		if not uci_set("wifidog_v3." .. code_section .. ".used_count=" .. tostring(used_count + 1)) or not uci_commit() then
+			uci_revert()
+			return false, "授权配置提交失败"
+		end
+		return true, "认证成功", staged_expiry, staged_timeout
+	end)
+	if not ok then return false, message end
+	complete_authorization(mac, ip, "code", expiry, timeout)
+	return true, "认证成功", expiry, timeout
 end
 
 local function read_body()
 	local length = tonumber(os.getenv("CONTENT_LENGTH") or "0") or 0
-	if length <= 0 then
-		return io.read("*a") or ""
+	if length > MAX_REQUEST_BODY then
+		return nil, "请求内容过大"
 	end
-	return io.read(length) or ""
+	if length <= 0 then
+		local body = io.read(MAX_REQUEST_BODY + 1) or ""
+		if #body > MAX_REQUEST_BODY then
+			return nil, "请求内容过大"
+		end
+		return body
+	end
+	return io.read(length) or "", nil
 end
 
 local function request_target()
@@ -1022,6 +1154,10 @@ local function response(status, content_type, body, extra_headers)
 	io.write("Content-Type: " .. content_type .. "\r\n")
 	io.write("Content-Length: " .. tostring(#body) .. "\r\n")
 	io.write("Cache-Control: no-store, no-cache, must-revalidate\r\n")
+	io.write("X-Content-Type-Options: nosniff\r\n")
+	io.write("Referrer-Policy: no-referrer\r\n")
+	io.write("X-Frame-Options: DENY\r\n")
+	io.write("Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'\r\n")
 	for key, value in pairs(extra_headers or {}) do
 		io.write(key .. ": " .. value .. "\r\n")
 	end
@@ -1163,14 +1299,15 @@ local function portal_html(redirect_url, error_msg)
 	local code_placeholder = setting_text("portal_code_placeholder", "请输入授权码", 80)
 	local code_enabled = option_enabled("auth_code_enabled", "1")
 	local radius_enabled = option_enabled("radius_enabled", "0")
-	if not code_enabled and not radius_enabled then
-		code_enabled = true
-	end
+	local self_service_enabled = code_enabled or radius_enabled
 	local error_block = ""
 	if error_msg and error_msg ~= "" then
 		error_block = '<div class="message error" id="message">' .. html_escape(error_msg) .. '</div>'
 	else
 		error_block = '<div class="message" id="message" style="display:none"></div>'
+	end
+	if not self_service_enabled then
+		error_block = '<div class="message error" id="message">管理员暂未启用自助认证，请联系网络管理员。</div>'
 	end
 	local method_controls = ""
 	if code_enabled and radius_enabled then
@@ -1182,8 +1319,10 @@ local function portal_html(redirect_url, error_msg)
 		]]
 	elseif radius_enabled then
 		method_controls = [[<input type="hidden" name="auth_method" value="radius">]]
-	else
+	elseif code_enabled then
 		method_controls = [[<input type="hidden" name="auth_method" value="code">]]
+	else
+		method_controls = [[<input type="hidden" name="auth_method" value="none">]]
 	end
 	local code_controls = ""
 	if code_enabled then
@@ -1309,7 +1448,7 @@ local function portal_html(redirect_url, error_msg)
 			<input type="hidden" name="action" value="auth">
 			<input type="hidden" name="redirect_url" value="]] .. html_escape(redirect_url) .. [[">
 			]] .. method_controls .. code_controls .. radius_controls .. [[
-			<button type="submit" id="submit-button" data-button-text="]] .. html_escape(button_text) .. [[">]] .. html_escape(button_text) .. [[</button>
+			<button type="submit" id="submit-button" data-button-text="]] .. html_escape(button_text) .. [["]] .. (self_service_enabled and "" or " disabled") .. [[>]] .. html_escape(self_service_enabled and button_text or "暂不可认证") .. [[</button>
 		</form>
 		<div class="info">]] .. html_escape_multiline(page_hint) .. [[</div>
 	</div>
@@ -1538,12 +1677,18 @@ local function handle()
 	end
 
 	if method == "POST" then
-		local form = parse_form(read_body())
+		local body, body_error = read_body()
+		if not body then
+			response("413 Payload Too Large", "application/json; charset=utf-8", '{"success":false,"message":"' .. json_escape(body_error) .. '"}')
+			return
+		end
+		local form = parse_form(body)
 		if form.action == "auth" then
 			local code_enabled = option_enabled("auth_code_enabled", "1")
 			local radius_enabled = option_enabled("radius_enabled", "0")
 			if not code_enabled and not radius_enabled then
-				code_enabled = true
+				json_response('{"success":false,"message":"管理员未启用自助认证"}')
+				return
 			end
 			local auth_method = form.auth_method or ""
 			if auth_method == "" then
@@ -1562,14 +1707,18 @@ local function handle()
 						json_response('{"success":false,"message":"RADIUS认证未启用"}')
 						return
 					end
+					if client_mac == "" then
+						append_runtime_log("RADIUS认证失败：无法识别客户端MAC IP=" .. tostring(client_ip or ""))
+						json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
+						return
+					end
 					local ok, message, radius_user, session_timeout = radius_authenticate(form.radius_username, form.radius_password, client_mac, client_ip)
 					if ok then
-						if client_mac == "" then
-							append_runtime_log("RADIUS认证失败：无法识别客户端MAC IP=" .. tostring(client_ip or ""))
-							json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
+						local authorized, expiry, valid_seconds = authorize_client(client_mac, client_ip, "radius", radius_user, "", session_timeout)
+						if not authorized then
+							json_response('{"success":false,"message":"' .. json_escape(expiry or "授权状态写入失败") .. '"}')
 							return
 						end
-						local _, expiry, valid_seconds = authorize_client(client_mac, client_ip, "radius", radius_user, "", session_timeout)
 						json_response(auth_success_json(form.redirect_url or "", expiry, valid_seconds))
 						return
 					end
@@ -1588,14 +1737,13 @@ local function handle()
 					json_response('{"success":false,"message":"请输入授权码"}')
 					return
 				end
-				local ok, message, used_code, auth_minutes = validate_auth_code(form.auth_code)
+				if client_mac == "" then
+					append_runtime_log("授权码认证失败：无法识别客户端MAC IP=" .. tostring(client_ip or ""))
+					json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
+					return
+				end
+				local ok, message, expiry, valid_seconds = authorize_with_code(form.auth_code, client_mac, client_ip)
 				if ok then
-					if client_mac == "" then
-						append_runtime_log("授权码认证失败：无法识别客户端MAC IP=" .. tostring(client_ip or ""))
-						json_response('{"success":false,"message":"无法识别客户端MAC地址"}')
-						return
-					end
-					local _, expiry, valid_seconds = authorize_client(client_mac, client_ip, "code", used_code, auth_minutes)
 					json_response(auth_success_json(form.redirect_url or "", expiry, valid_seconds))
 					return
 				end

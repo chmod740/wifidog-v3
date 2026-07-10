@@ -34,6 +34,12 @@ function showMessage(msg, type) {
 	setTimeout(function() { el.style.display = 'none'; }, 3000);
 }
 
+function esc(value) {
+	return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
+		return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+	});
+}
+
 function loadCodes() {
 	var tbody = document.getElementById('codes-tbody');
 	var loading = document.getElementById('codes-loading');
@@ -49,13 +55,14 @@ function loadCodes() {
 	.then(function(r) { return r.json(); })
 	.then(function(data) {
 		loading.style.display = 'none';
-		if (!data.success || !data.codes || data.codes.length === 0) {
+		var codes = Array.isArray(data.codes) ? data.codes : [];
+		if (!data.success || codes.length === 0) {
 			empty.style.display = 'block';
 			return;
 		}
 		empty.style.display = 'none';
 
-		data.codes.forEach(function(c) {
+		codes.forEach(function(c) {
 			var used = parseInt(c.used_count) || 0;
 			var max = parseInt(c.max_uses) || 0;
 			var authMinutes = parseInt(c.auth_minutes, 10);
@@ -66,14 +73,14 @@ function loadCodes() {
 
 			var tr = document.createElement('tr');
 			tr.innerHTML =
-				'<td><strong>' + c.code + '</strong></td>' +
+				'<td><strong>' + esc(c.code) + '</strong></td>' +
 				'<td>' + used + ' / ' + max + '</td>' +
 				'<td>' + authMinutesText + '</td>' +
-				'<td>' + c.expiry_days + ' 天</td>' +
-				'<td>' + (c.created_date || '-') + '</td>' +
+				'<td>' + esc(c.expiry_days) + ' 天</td>' +
+				'<td>' + esc(c.created_date || '-') + '</td>' +
 				'<td>' + statusHtml + '</td>' +
 				'<td class="wifidog-actions">' +
-					'<button type="button" class="wifidog-btn wifidog-btn-danger" onclick="deleteCode(\'' + c.code + '\')">删除</button>' +
+					'<button type="button" class="wifidog-btn wifidog-btn-danger" data-action="delete" data-code="' + esc(c.code) + '">删除</button>' +
 				'</td>';
 			tbody.appendChild(tr);
 		});
@@ -142,10 +149,18 @@ function deleteCode(code) {
 	});
 }
 
-if (document.readyState === 'loading') {
-	document.addEventListener('DOMContentLoaded', loadCodes);
-} else {
+function initAuthCodesPage() {
+	document.getElementById('codes-tbody').addEventListener('click', function(event) {
+		var button = event.target.closest('button[data-action="delete"]');
+		if (button) deleteCode(button.getAttribute('data-code') || '');
+	});
 	loadCodes();
+}
+
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', initAuthCodesPage);
+} else {
+	initAuthCodesPage();
 }
 </script>
 ]]

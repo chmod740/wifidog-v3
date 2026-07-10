@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-wifidog-v3
-PKG_VERSION:=1.0.2
+PKG_VERSION:=1.0.3
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=WiFiDog V3 Team
@@ -157,7 +157,8 @@ if uci -q get ucitrack.@wifidog_v3[0] >/dev/null 2>&1; then
 fi
 
 # 6. Remove generated state files
-rm -f /var/log/wifidog_v3.log /var/run/wifidog_v3_portal.pid /var/run/wifidog_v3_expiry.pid /tmp/dnsmasq.d/wifidog_v3.conf /tmp/wifidog_v3_ip_sessions 2>/dev/null
+	rm -f /var/log/wifidog_v3.log /var/log/wifidog_v3.log.1 /var/run/wifidog_v3_portal.pid /var/run/wifidog_v3_expiry.pid /tmp/dnsmasq.d/wifidog_v3.conf /tmp/wifidog_v3_ip_sessions 2>/dev/null
+	rm -rf /var/lock/wifidog_v3_auth.lock 2>/dev/null
 
 exit 0
 endef
@@ -177,7 +178,8 @@ rm -rf /usr/lib/lua/luci/view/wifidog_v3 2>/dev/null
 rm -f /usr/lib/lua/luci/controller/wifidog_v3.lua 2>/dev/null
 rm -f /usr/lib/lua/luci/i18n/wifidog_v3.zh-cn.po 2>/dev/null
 rm -f /etc/config/wifidog_v3 /etc/uci-defaults/40_luci-wifidog-v3 2>/dev/null
-rm -f /etc/rc.d/S90wifidog_v3 /var/log/wifidog_v3.log /var/run/wifidog_v3_portal.pid /var/run/wifidog_v3_expiry.pid /tmp/dnsmasq.d/wifidog_v3.conf /tmp/wifidog_v3_ip_sessions 2>/dev/null
+	rm -f /etc/rc.d/S90wifidog_v3 /var/log/wifidog_v3.log /var/log/wifidog_v3.log.1 /var/run/wifidog_v3_portal.pid /var/run/wifidog_v3_expiry.pid /tmp/dnsmasq.d/wifidog_v3.conf /tmp/wifidog_v3_ip_sessions 2>/dev/null
+	rm -rf /var/lock/wifidog_v3_auth.lock 2>/dev/null
 exit 0
 endef
 

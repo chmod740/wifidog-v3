@@ -4,6 +4,7 @@ local sys = require "luci.sys"
 local http = require "luci.http"
 local jsonc = require "luci.jsonc"
 local LOG_FILE = "/var/log/wifidog_v3.log"
+local LOG_MAX_BYTES = 512 * 1024
 
 function index()
 	if not nixio.fs.access("/etc/config/wifidog_v3") then
@@ -67,8 +68,6 @@ function index()
 	-- AJAX endpoint for service status
 	entry({"admin", "services", appname, "status"}, call("action_status")).leaf = true
 
-	-- Public portal page (no admin auth required)
-	entry({"wifidog_v3", "portal"}, call("action_portal")).sysauth = false
 end
 
 -- ============================================================
@@ -289,6 +288,11 @@ local function append_runtime_log(message)
 		return
 	end
 	sys.call("mkdir -p /var/log >/dev/null 2>&1")
+	local size = tonumber(trim(sys.exec("wc -c < " .. shell_quote(LOG_FILE) .. " 2>/dev/null"))) or 0
+	if size >= LOG_MAX_BYTES then
+		sys.call("rm -f " .. shell_quote(LOG_FILE .. ".1") .. " >/dev/null 2>&1")
+		sys.call("mv " .. shell_quote(LOG_FILE) .. " " .. shell_quote(LOG_FILE .. ".1") .. " >/dev/null 2>&1")
+	end
 	local fp = io.open(LOG_FILE, "a")
 	if fp then
 		fp:write(os.date("%Y-%m-%d %H:%M:%S"), " [admin] ", message, "\n")
@@ -338,6 +342,18 @@ local function normalize_auth_minutes(value)
 		return nil, "授权后有效时长必须在 1 到 525600 分钟之间"
 	end
 	return tostring(minutes), nil
+end
+
+local function normalize_uint(value, min_value, max_value)
+	value = tostring(value or ""):match("^%s*(.-)%s*$")
+	if not value:match("^%d+$") then
+		return nil
+	end
+	local number = tonumber(value)
+	if not number or number < min_value or number > max_value then
+		return nil
+	end
+	return tostring(math.floor(number))
 end
 
 local function format_duration(seconds)
@@ -679,7 +695,7 @@ local function section_options(s)
 	return out
 end
 
-local function backup_payload()
+local function backup_payload(include_secrets)
 	local payload = {
 		app = "wifidog_v3",
 		format_version = 1,
@@ -707,6 +723,10 @@ local function backup_payload()
 			payload.auth_codes[#payload.auth_codes + 1] = section_options(s)
 		end
 	end
+	if not include_secrets then
+		payload.settings.radius_secret = nil
+	end
+	payload.sensitive_fields_included = include_secrets and true or false
 
 	table.sort(payload.devices, function(a, b) return tostring(a.mac or "") < tostring(b.mac or "") end)
 	table.sort(payload.auth_codes, function(a, b) return tostring(a.code or "") < tostring(b.code or "") end)
@@ -744,7 +764,7 @@ local function normalize_backup_payload(payload)
 	if payload.devices ~= nil and type(payload.devices) ~= "table" then
 		return nil, "设备列表格式不正确"
 	end
-	for _, dev in ipairs(payload.devices or {}) do
+		for _, dev in ipairs(payload.devices or {}) do
 		if type(dev) ~= "table" then
 			return nil, "设备列表中存在无效条目"
 		end
@@ -756,13 +776,17 @@ local function normalize_backup_payload(payload)
 		if not device_types_allowed[dev_type] then
 			return nil, "设备 " .. mac .. " 的名单类型无效"
 		end
-		normalized.devices[#normalized.devices + 1] = {
+			local auth_expiry = normalize_uint(dev.auth_expiry or "0", 0, 4102444800)
+			if not auth_expiry then
+				return nil, "设备 " .. mac .. " 的授权到期时间无效"
+			end
+			normalized.devices[#normalized.devices + 1] = {
 			mac = mac,
 			ip = clean_import_value(dev.ip, 64) or "",
 			hostname = clean_import_value(dev.hostname, 128) or "",
 			note = clean_import_value(dev.note, 256) or "",
 			type = dev_type,
-			auth_expiry = clean_import_value(dev.auth_expiry, 32) or "0",
+				auth_expiry = auth_expiry,
 			auth_source = clean_import_value(dev.auth_source, 32) or "",
 			auth_code = clean_import_value(dev.auth_code, 128) or "",
 			radius_user = clean_import_value(dev.radius_user, 128) or "",
@@ -780,23 +804,35 @@ local function normalize_backup_payload(payload)
 	if payload.auth_codes ~= nil and type(payload.auth_codes) ~= "table" then
 		return nil, "授权码列表格式不正确"
 	end
-	for _, code in ipairs(payload.auth_codes or {}) do
+		for _, code in ipairs(payload.auth_codes or {}) do
 		if type(code) ~= "table" then
 			return nil, "授权码列表中存在无效条目"
 		end
 		local value = clean_import_value(code.code, 128)
-		if not value or value == "" then
-			return nil, "授权码不能为空"
-		end
+			if not value or value == "" then
+				return nil, "授权码不能为空"
+			end
+			if #value > 128 or value:find("[%z\001-\031\127]") then
+				return nil, "授权码包含无效字符或长度超过 128 字节"
+			end
+			local max_uses = normalize_uint(code.max_uses or "1", 1, 9999)
+			local used_count = normalize_uint(code.used_count or "0", 0, 9999)
+			local expiry_days = normalize_uint(code.expiry_days or "30", 1, 3650)
+			if not max_uses or not used_count or tonumber(used_count) > tonumber(max_uses) then
+				return nil, "授权码 " .. value:upper() .. " 的使用次数无效"
+			end
+			if not expiry_days then
+				return nil, "授权码 " .. value:upper() .. " 的有效期无效"
+			end
 		local auth_minutes, auth_minutes_err = normalize_auth_minutes(clean_import_value(code.auth_minutes, 16) or "")
 		if not auth_minutes then
 			return nil, "授权码 " .. value:upper() .. " 的" .. (auth_minutes_err or "授权后有效时长无效")
 		end
 		normalized.auth_codes[#normalized.auth_codes + 1] = {
 			code = value:upper(),
-			max_uses = clean_import_value(code.max_uses, 16) or "1",
-			used_count = clean_import_value(code.used_count, 16) or "0",
-			expiry_days = clean_import_value(code.expiry_days, 16) or "30",
+				max_uses = max_uses,
+				used_count = used_count,
+				expiry_days = expiry_days,
 			created_date = clean_import_value(code.created_date, 16) or os.date("%Y-%m-%d"),
 			enabled = clean_import_value(code.enabled, 8) or "1",
 			auth_minutes = auth_minutes
@@ -926,13 +962,16 @@ function action_add_whitelist()
 	local hostname = http.formvalue("hostname") or ""
 	local note = http.formvalue("note") or ""
 
-	if not mac or mac == "" then
+	mac = normalize_mac(mac)
+	if not mac then
 		http.prepare_content("application/json")
-		http.write_json({ success = false, message = "MAC地址不能为空" })
+		http.write_json({ success = false, message = "MAC地址格式无效" })
 		return
 	end
 
-	mac = mac:upper()
+	ip = clean_import_value(ip, 64) or ""
+	hostname = clean_import_value(hostname, 128) or ""
+	note = clean_import_value(note, 256) or ""
 	note = note_for_transition(mac, note)
 	local saved = device_section_for_mac(mac) or {}
 
@@ -967,13 +1006,16 @@ function action_add_blacklist()
 	local hostname = http.formvalue("hostname") or ""
 	local note = http.formvalue("note") or ""
 
-	if not mac or mac == "" then
+	mac = normalize_mac(mac)
+	if not mac then
 		http.prepare_content("application/json")
-		http.write_json({ success = false, message = "MAC地址不能为空" })
+		http.write_json({ success = false, message = "MAC地址格式无效" })
 		return
 	end
 
-	mac = mac:upper()
+	ip = clean_import_value(ip, 64) or ""
+	hostname = clean_import_value(hostname, 128) or ""
+	note = clean_import_value(note, 256) or ""
 	note = note_for_transition(mac, note)
 	local saved = device_section_for_mac(mac) or {}
 
@@ -1007,17 +1049,21 @@ function action_add_authorize()
 	local hostname = http.formvalue("hostname") or ""
 	local note = http.formvalue("note") or ""
 
-	if not mac or mac == "" then
+	mac = normalize_mac(mac)
+	if not mac then
 		http.prepare_content("application/json")
-		http.write_json({ success = false, message = "MAC地址不能为空" })
+		http.write_json({ success = false, message = "MAC地址格式无效" })
 		return
 	end
 
-	mac = mac:upper()
+	ip = clean_import_value(ip, 64) or ""
+	hostname = clean_import_value(hostname, 128) or ""
+	note = clean_import_value(note, 256) or ""
 	note = note_for_transition(mac, note)
 	local saved = device_section_for_mac(mac) or {}
 
-	local auth_timeout = tonumber(sys.exec("uci -q get wifidog_v3.settings.auth_timeout 2>/dev/null") or "1440")
+	local auth_timeout = tonumber(sys.exec("uci -q get wifidog_v3.settings.auth_timeout 2>/dev/null") or "1440") or 1440
+	if auth_timeout < 1 or auth_timeout > 525600 then auth_timeout = 1440 end
 	local expiry = os.time() + (auth_timeout * 60)
 
 	delete_devices_by_mac_cli(mac)
@@ -1051,14 +1097,16 @@ function action_update_note()
 	local hostname = http.formvalue("hostname") or ""
 	local note = http.formvalue("note") or ""
 
-	if not mac or mac == "" then
+	mac = normalize_mac(mac)
+	if not mac then
 		http.prepare_content("application/json")
-		http.write_json({ success = false, message = "MAC地址不能为空" })
+		http.write_json({ success = false, message = "MAC地址格式无效" })
 		return
 	end
 
-	mac = mac:upper()
-	note = note:sub(1, 256)
+	ip = clean_import_value(ip, 64) or ""
+	hostname = clean_import_value(hostname, 128) or ""
+	note = clean_import_value(note, 256) or ""
 	local section = find_device_section_cli(mac)
 	local ok = false
 	if not section then
@@ -1099,13 +1147,12 @@ end
 function action_remove_device()
 	local mac = http.formvalue("mac")
 
-	if not mac or mac == "" then
+	mac = normalize_mac(mac)
+	if not mac then
 		http.prepare_content("application/json")
-		http.write_json({ success = false, message = "MAC地址不能为空" })
+		http.write_json({ success = false, message = "MAC地址格式无效" })
 		return
 	end
-
-	mac = mac:upper()
 
 	local ok = move_device_to_pending_cli(mac)
 	if ok then
@@ -1288,14 +1335,24 @@ function action_generate_code()
 	local auth_minutes = http.formvalue("auth_minutes") or ""
 
 	code = code and code:match("^%s*(.-)%s*$") or ""
-	max_uses = tostring(tonumber(max_uses) or 1)
-	expiry_days = tostring(tonumber(expiry_days) or 30)
+	max_uses = normalize_uint(max_uses, 1, 9999)
+	expiry_days = normalize_uint(expiry_days, 1, 3650)
 	local auth_minutes_err
 	auth_minutes, auth_minutes_err = normalize_auth_minutes(auth_minutes)
 
 	if not code or code == "" then
 		http.prepare_content("application/json")
 		http.write_json({ success = false, message = "授权码不能为空" })
+		return
+	end
+	if #code > 128 or code:find("[%z\001-\031\127]") then
+		http.prepare_content("application/json")
+		http.write_json({ success = false, message = "授权码包含无效字符或长度超过 128 字节" })
+		return
+	end
+	if not max_uses or not expiry_days then
+		http.prepare_content("application/json")
+		http.write_json({ success = false, message = "可用次数或有效期超出允许范围" })
 		return
 	end
 	if not auth_minutes then
@@ -1364,7 +1421,8 @@ function action_delete_code()
 end
 
 function action_export_config()
-	local content = jsonc.stringify(backup_payload()) or "{}"
+	local include_secrets = http.formvalue("include_secrets") == "1"
+	local content = jsonc.stringify(backup_payload(include_secrets)) or "{}"
 	local filename = "wifidog-v3-backup-" .. os.date("%Y%m%d-%H%M%S") .. ".json"
 
 	http.header("Content-Disposition", "attachment; filename=" .. filename)
@@ -1492,6 +1550,7 @@ end
 
 function action_clear_runtime_logs()
 	sys.call("mkdir -p /var/log >/dev/null 2>&1")
+	sys.call("rm -f " .. shell_quote(LOG_FILE .. ".1") .. " >/dev/null 2>&1")
 	local ok = false
 	local fp = io.open(LOG_FILE, "w")
 	if fp then

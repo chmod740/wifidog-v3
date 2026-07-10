@@ -58,9 +58,21 @@ The screenshots below were captured from the actual LuCI pages in a Docker OpenW
   - Legacy probes used by iOS, Android, Windows, and NetworkManager
 - Portal UI served by a dedicated uhttpd instance, with selectable themes and editable copy.
 - Backup and restore for settings, lists, notes, authorization codes, and portal UI settings.
-- Runtime log viewer for app logs and related syslog entries, with safe app-log clearing.
+- Sensitive configuration protection: backups omit the RADIUS shared secret by default and include it only when explicitly requested.
+- Runtime log viewer for app logs and related syslog entries, with safe clearing and 512 KiB rotation.
 - Passwall2 coexistence using early-priority nftables rules to enforce authorization before traffic splitting where possible.
 - Safe uninstall cleanup for nftables, portal processes, DHCP/RA advertisements, runtime state, and config files.
+- Security hardening with transactional authorization-code counters, input validation, request limits, browser security headers, and startup rollback.
+
+## v1.0.3 Changes
+
+- Removed the legacy unauthenticated LuCI authorization endpoint; all self-service authorization now uses the dedicated Portal CGI.
+- Fixed stored XSS and malformed-array handling on the authorization-code page.
+- Authorization codes are counted only after the client MAC is known; a concurrent single-use code can succeed only once.
+- Expired temporary authorization returns to pending while preserving MAC-bound notes, hostname, and User-Agent data.
+- Firewall and DHCP/RA changes are rolled back if nftables or Portal startup fails.
+- Pending HTTP is redirected to the Portal; HTTPS/443 is blocked instead of attempting unreliable plaintext or self-signed interception.
+- Added log rotation, a 16 KiB Portal request limit, browser security headers, and safer RADIUS temporary-file permissions.
 
 ## Supported Versions
 
@@ -92,7 +104,7 @@ Build the OpenWrt 23/24 IPK:
 Output:
 
 ```text
-dist/luci-app-wifidog-v3_1.0.2-1_all.ipk
+dist/luci-app-wifidog-v3_1.0.3-1_all.ipk
 ```
 
 Build the OpenWrt 25 APK:
@@ -104,28 +116,28 @@ Build the OpenWrt 25 APK:
 Output:
 
 ```text
-dist/openwrt25/luci-app-wifidog-v3-1.0.2-r1.apk
+dist/openwrt25/luci-app-wifidog-v3-1.0.3-r1.apk
 ```
 
 ## Install
 
 Latest release packages:
 
-- Release: <https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.2>
-- IPK: `luci-app-wifidog-v3_1.0.2-1_all.ipk`
-- APK: `luci-app-wifidog-v3-1.0.2-r1.apk`
+- Release: <https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.3>
+- IPK: `luci-app-wifidog-v3_1.0.3-1_all.ipk`
+- APK: `luci-app-wifidog-v3-1.0.3-r1.apk`
 
 OpenWrt 23/24:
 
 ```sh
 opkg update
-opkg install /tmp/luci-app-wifidog-v3_1.0.2-1_all.ipk
+opkg install /tmp/luci-app-wifidog-v3_1.0.3-1_all.ipk
 ```
 
 OpenWrt 25:
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.2-r1.apk
+apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.3-r1.apk
 ```
 
 After installation, open LuCI:
@@ -179,6 +191,12 @@ Docker regression:
 python3 test/e2e_openwrt23_container.py
 ```
 
+Fast security and source-contract tests:
+
+```sh
+python3 test/test_source_contracts.py
+```
+
 OpenWrt 25 / APK mode:
 
 ```sh
@@ -193,10 +211,11 @@ lua /tmp/utm_smoke.lua
 
 Latest regression results:
 
-- Docker OpenWrt 23.05.6: `107 passed, 0 failed`
+- Source-contract tests: `33 passed, 0 failed`
+- Docker OpenWrt 23.05.6: `124 passed, 0 failed`
 - UTM OpenWrt 23.05.6: install, portal, authorization codes, RADIUS, Passwall2 coexistence, disable, and uninstall cleanup passed
-- UTM OpenWrt 24.10.6: install, portal, authorization codes, RADIUS PAP, `Session-Timeout`, runtime logs, disable, and uninstall cleanup passed
-- UTM OpenWrt 25.12.3: APK install, portal, authorization codes, RADIUS PAP, `Session-Timeout`, runtime logs, disable, and uninstall cleanup passed
+- UTM OpenWrt 24.10.6: v1.0.3 IPK install, portal, authorization codes, RADIUS PAP, `Session-Timeout`, runtime logs, disable, and uninstall cleanup passed
+- UTM OpenWrt 25.12.3: v1.0.3 APK install, portal, authorization codes, RADIUS PAP, `Session-Timeout`, runtime logs, disable, and uninstall cleanup passed
 
 UTM 24/25 uninstall checks confirmed no leftovers for:
 
@@ -206,6 +225,7 @@ UTM 24/25 uninstall checks confirmed no leftovers for:
 - `/www/cgi-bin/wifidog_v3`
 - `/etc/config/wifidog_v3`
 - `/var/run/wifidog_v3_portal.pid`
+- `/var/lock/wifidog_v3_auth.lock`
 - `inet wifidog_v3` nftables table
 
 ## Uninstall
@@ -231,9 +251,11 @@ The uninstall scripts clean:
 - `/tmp/dnsmasq.d/wifidog_v3.conf`
 - `dhcp.lan.captive_portal_uri`
 - `/tmp/wifidog_v3_ip_sessions`
+- `/var/lock/wifidog_v3_auth.lock`
+- `/var/log/wifidog_v3.log` and its rotated file
 
 ## Notes
 
-- HTTPS interception may show certificate warnings. This is a common Captive Portal limitation; OS captive portal probes should be preferred for opening the login page.
+- HTTPS/443 is blocked for unauthorized clients. The system does not forge destination certificates or return a plaintext Portal on a TLS connection; RFC 8910, OS probes, and HTTP requests are used to open the login page.
 - iOS captive portal window closing depends on the system re-checking network status. The portal polls the Captive Portal API and triggers compatible probes as a fallback.
 - If clients use randomized MAC addresses, authorization, notes, and list state are bound to the current randomized MAC.

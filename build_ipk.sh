@@ -3,7 +3,7 @@
 set -e
 
 PKG_NAME="luci-app-wifidog-v3"
-PKG_VERSION="1.0.2"
+PKG_VERSION="1.0.3"
 PKG_RELEASE="1"
 PKG_ARCH="all"
 PKG_MAINTAINER="WiFiDog V3 Team"
@@ -183,7 +183,8 @@ while uci -q get ucitrack.@wifidog_v3[0] >/dev/null 2>&1; do
     uci -q delete ucitrack.@wifidog_v3[0]
 done
 uci -q commit ucitrack 2>/dev/null
-rm -f /etc/rc.d/S90wifidog_v3 /var/log/wifidog_v3.log /var/run/wifidog_v3_portal.pid /var/run/wifidog_v3_expiry.pid /tmp/dnsmasq.d/wifidog_v3.conf /tmp/wifidog_v3_ip_sessions 2>/dev/null
+rm -f /etc/rc.d/S90wifidog_v3 /var/log/wifidog_v3.log /var/log/wifidog_v3.log.1 /var/run/wifidog_v3_portal.pid /var/run/wifidog_v3_expiry.pid /tmp/dnsmasq.d/wifidog_v3.conf /tmp/wifidog_v3_ip_sessions 2>/dev/null
+rm -rf /var/lock/wifidog_v3_auth.lock 2>/dev/null
 exit 0
 EOF
 chmod 755 "$BUILD_DIR/control/prerm"
@@ -204,7 +205,8 @@ done
 for pid in $(ps w 2>/dev/null | awk '/[u]httpd/ && /\/www\/wifidog_v3/ { print $1 }'); do
     kill "$pid" >/dev/null 2>&1 || true
 done
-rm -f /etc/rc.d/S90wifidog_v3 /var/log/wifidog_v3.log /var/run/wifidog_v3_portal.pid /var/run/wifidog_v3_expiry.pid /tmp/dnsmasq.d/wifidog_v3.conf /tmp/wifidog_v3_ip_sessions 2>/dev/null || true
+rm -f /etc/rc.d/S90wifidog_v3 /var/log/wifidog_v3.log /var/log/wifidog_v3.log.1 /var/run/wifidog_v3_portal.pid /var/run/wifidog_v3_expiry.pid /tmp/dnsmasq.d/wifidog_v3.conf /tmp/wifidog_v3_ip_sessions 2>/dev/null || true
+rm -rf /var/lock/wifidog_v3_auth.lock 2>/dev/null || true
 exit 0
 EOF
 chmod 755 "$BUILD_DIR/control/postrm"
