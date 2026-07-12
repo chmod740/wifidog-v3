@@ -58,7 +58,7 @@ function loadCodes() {
 		var codes = Array.isArray(data.codes) ? data.codes : [];
 		document.getElementById('codes-count').textContent = codes.length;
 		if (!data.success || codes.length === 0) {
-			empty.style.display = 'block';
+			empty.style.display = 'flex';
 			return;
 		}
 		empty.style.display = 'none';
@@ -173,11 +173,13 @@ if (document.readyState === 'loading') {
 <div class="wifidog-shell">
 	<header class="wifidog-page-head">
 		<div class="wifidog-page-head-main">
-			<span class="wifidog-page-kicker"><%:访客凭证%></span>
 			<h2 class="wifidog-page-title"><%:授权码管理%></h2>
 			<p class="wifidog-page-copy"><%:为访客创建限次、限期的自助认证凭证，并按需设置单次授权时长。%></p>
 		</div>
-		<div class="wifidog-page-meta"><span class="wifidog-badge wifidog-badge-info"><%:Portal 自助认证%></span></div>
+		<div class="wifidog-page-meta">
+			<span class="wifidog-badge wifidog-badge-info"><%:Portal 自助认证%></span>
+			<button type="button" class="wifidog-btn" onclick="loadCodes()"><%:刷新列表%></button>
+		</div>
 	</header>
 	<div id="wifidog-msg" class="wifidog-msg" style="display:none;" aria-live="polite"></div>
 
@@ -216,7 +218,10 @@ if (document.readyState === 'loading') {
 				</table>
 			</div>
 			<div id="codes-loading" class="wifidog-loading"><%:正在加载授权码列表...%></div>
-			<div id="codes-empty" class="wifidog-empty" style="display:none;"><%:暂未生成任何授权码%></div>
+			<div id="codes-empty" class="wifidog-empty" style="display:none;">
+				<strong><%:暂无授权码%></strong>
+				<span><%:使用上方表单创建访客自助认证凭证。%></span>
+			</div>
 		</div>
 	</section>
 </div>

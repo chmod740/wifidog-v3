@@ -1,5 +1,5 @@
 -- Runtime logs page
-local f = SimpleForm("wifidog_v3", translate("运行日志"))
+local f = SimpleForm("wifidog_v3")
 f.reset = false
 f.submit = false
 

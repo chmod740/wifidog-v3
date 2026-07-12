@@ -156,7 +156,7 @@ function loadPending() {
 		var devices = Array.isArray(data.devices) ? data.devices : [];
 		document.getElementById('pending-count').textContent = devices.length;
 		if (!data.success || devices.length === 0) {
-			empty.style.display = 'block';
+			empty.style.display = 'flex';
 			return;
 		}
 		empty.style.display = 'none';
@@ -205,7 +205,7 @@ function loadAuthorized() {
 		var devices = Array.isArray(data.devices) ? data.devices : [];
 		document.getElementById('authorized-count').textContent = devices.length;
 		if (!data.success || devices.length === 0) {
-			empty.style.display = 'block';
+			empty.style.display = 'flex';
 			return;
 		}
 		empty.style.display = 'none';
@@ -296,11 +296,13 @@ if (document.readyState === 'loading') {
 <div class="wifidog-shell">
 	<header class="wifidog-page-head">
 		<div class="wifidog-page-head-main">
-			<span class="wifidog-page-kicker"><%:设备访问控制%></span>
 			<h2 class="wifidog-page-title"><%:网络设备%></h2>
 			<p class="wifidog-page-copy"><%:查看内网终端的认证状态，并集中处理备注、名单和临时授权。%></p>
 		</div>
-		<div class="wifidog-page-meta"><span class="wifidog-badge wifidog-badge-info"><%:每15秒刷新%></span></div>
+		<div class="wifidog-page-meta">
+			<span class="wifidog-badge wifidog-badge-info"><%:每15秒刷新%></span>
+			<button type="button" class="wifidog-btn" onclick="refreshAll()"><%:立即刷新%></button>
+		</div>
 	</header>
 
 	<div id="wifidog-msg" class="wifidog-msg" style="display:none;" aria-live="polite"></div>
@@ -325,7 +327,10 @@ if (document.readyState === 'loading') {
 				</table>
 			</div>
 			<div id="pending-loading" class="wifidog-loading"><%:正在加载待授权设备...%></div>
-			<div id="pending-empty" class="wifidog-empty" style="display:none;"><%:当前没有待授权的设备%></div>
+			<div id="pending-empty" class="wifidog-empty" style="display:none;">
+				<strong><%:暂无待授权设备%></strong>
+				<span><%:新设备连接且未加入名单后会显示在这里。%></span>
+			</div>
 		</div>
 	</section>
 
@@ -350,7 +355,10 @@ if (document.readyState === 'loading') {
 				</table>
 			</div>
 			<div id="authorized-loading" class="wifidog-loading"><%:正在加载已授权设备...%></div>
-			<div id="authorized-empty" class="wifidog-empty" style="display:none;"><%:当前没有已授权的设备%></div>
+			<div id="authorized-empty" class="wifidog-empty" style="display:none;">
+				<strong><%:暂无已授权设备%></strong>
+				<span><%:手动授权或自助认证成功后会显示在这里。%></span>
+			</div>
 		</div>
 	</section>
 </div>

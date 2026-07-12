@@ -1,5 +1,5 @@
 -- Backup and restore page
-local f = SimpleForm("wifidog_v3", translate("配置备份"))
+local f = SimpleForm("wifidog_v3")
 f.reset = false
 f.submit = false
 

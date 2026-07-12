@@ -68,7 +68,7 @@ function loadDevices() {
 		var devices = Array.isArray(data.devices) ? data.devices : [];
 		document.getElementById('devices-count').textContent = devices.length;
 		if (!data.success || devices.length === 0) {
-			empty.style.display = 'block';
+			empty.style.display = 'flex';
 			return;
 		}
 		empty.style.display = 'none';
@@ -153,11 +153,13 @@ if (document.readyState === 'loading') {
 <div class="wifidog-shell">
 	<header class="wifidog-page-head">
 		<div class="wifidog-page-head-main">
-			<span class="wifidog-page-kicker"><%:无限制访问%></span>
 			<h2 class="wifidog-page-title"><%:白名单管理%></h2>
 			<p class="wifidog-page-copy"><%:白名单设备不经过认证限制，可正常访问内网和公网资源。%></p>
 		</div>
-		<div class="wifidog-page-meta"><span class="wifidog-badge wifidog-badge-ok"><%:始终放行%></span></div>
+		<div class="wifidog-page-meta">
+			<span class="wifidog-badge wifidog-badge-ok"><%:始终放行%></span>
+			<button type="button" class="wifidog-btn" onclick="loadDevices()"><%:立即刷新%></button>
+		</div>
 	</header>
 	<div id="wifidog-msg" class="wifidog-msg" style="display:none;" aria-live="polite"></div>
 	<section class="wifidog-panel">
@@ -178,7 +180,10 @@ if (document.readyState === 'loading') {
 				</table>
 			</div>
 			<div id="devices-loading" class="wifidog-loading"><%:正在加载白名单...%></div>
-			<div id="devices-empty" class="wifidog-empty" style="display:none;"><%:白名单中没有设备%></div>
+			<div id="devices-empty" class="wifidog-empty" style="display:none;">
+				<strong><%:白名单为空%></strong>
+				<span><%:从网络设备页面添加后，设备会显示在这里。%></span>
+			</div>
 		</div>
 	</section>
 </div>

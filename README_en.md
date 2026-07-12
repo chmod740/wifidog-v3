@@ -10,7 +10,7 @@ WiFiDog V3 is a LuCI network authentication system for OpenWrt. It manages pendi
 
 ## LuCI Admin Screenshots
 
-The screenshots below were captured from the actual LuCI pages in a Docker OpenWrt 23.05.6 environment.
+The screenshots below were captured from the actual LuCI pages in a UTM OpenWrt 24.10.6 environment.
 
 ### Device Scan
 
@@ -227,7 +227,7 @@ lua /tmp/utm_smoke.lua
 
 Latest regression results:
 
-- Source-contract tests: `36 passed, 0 failed`
+- Source-contract tests: `37 passed, 0 failed`
 - Docker OpenWrt 23.05.6: `124 passed, 0 failed`
 - Docker OpenWrt 23.05.6: in-place v1.0.3 to v1.0.4 IPK upgrade preserved settings, secrets, lists, notes, and authorization codes
 - UTM OpenWrt 24.10.6: v1.0.4 IPK upgrade, Portal, RFC 8908/8910, device identification, backup/restore, authorization codes, RADIUS PAP, `Session-Timeout`, disable, and uninstall cleanup passed
