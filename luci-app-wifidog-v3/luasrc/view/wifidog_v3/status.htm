@@ -9,17 +9,6 @@ function statusItem(label, text, ok) {
 		'<span class="wifidog-badge ' + (ok ? 'wifidog-badge-ok' : 'wifidog-badge-error') + '">' + text + '</span></div>';
 }
 
-function statusBanner(state, icon, title, description, items) {
-	return '<div class="wifidog-state-banner wifidog-state-' + state + '">' +
-		'<span class="wifidog-state-icon" aria-hidden="true">' + icon + '</span>' +
-		'<div class="wifidog-state-copy">' +
-			'<span class="wifidog-state-kicker">]] .. translate("当前状态") .. [[</span>' +
-			'<h4>' + title + '</h4>' +
-			'<p>' + description + '</p>' +
-			(items ? '<div class="wifidog-status-grid">' + items + '</div>' : '') +
-		'</div></div>';
-}
-
 function updateStatus() {
 	var el = document.getElementById('wifidog_status');
 	if (!el) return;
@@ -31,20 +20,15 @@ function updateStatus() {
 		if (data.enabled) {
 			var nftOk = data.nft !== undefined ? data.nft : data.running;
 			var portalOk = data.portal !== undefined ? data.portal : data.running;
-			var items = statusItem(']] .. translate("系统功能") .. [[', ']] .. translate("已启用") .. [[', true) +
-				statusItem(']] .. translate("防火墙规则") .. [[', nftOk ? ']] .. translate("运行中") .. [[' : ']] .. translate("未运行") .. [[', nftOk) +
-				statusItem(']] .. translate("Portal 服务") .. [[', portalOk ? ']] .. translate("运行中") .. [[' : ']] .. translate("未运行") .. [[', portalOk);
-			if (nftOk && portalOk) {
-				html = statusBanner('ok', '&#10003;', ']] .. translate("认证系统运行正常") .. [[',
-					']] .. translate("访问控制规则与 Portal 服务均已就绪。状态每 5 秒自动更新。") .. [[', items);
-			} else {
-				html = statusBanner('error', '!', ']] .. translate("认证服务未完全运行") .. [[',
-					']] .. translate("请检查运行日志和网络接口设置，保存配置后系统会重新启动服务。") .. [[', items);
-			}
+			html += '<div class="wifidog-status-grid">';
+			html += statusItem(']] .. translate("系统状态") .. [[', ']] .. translate("已启用") .. [[', true);
+			html += statusItem(']] .. translate("防火墙规则") .. [[', nftOk ? ']] .. translate("运行中") .. [[' : ']] .. translate("未运行") .. [[', nftOk);
+			html += statusItem(']] .. translate("Portal服务") .. [[', portalOk ? ']] .. translate("运行中") .. [[' : ']] .. translate("未运行") .. [[', portalOk);
+			html += '</div>';
 		} else {
-			html = statusBanner('disabled', '&#8211;', ']] .. translate("认证系统已禁用") .. [[',
-				']] .. translate("当前不应用访问控制规则。可在基本设置中启用系统。") .. [[',
-				statusItem(']] .. translate("系统功能") .. [[', ']] .. translate("已禁用") .. [[', false));
+			html += '<div class="wifidog-status-grid">';
+			html += statusItem(']] .. translate("系统状态") .. [[', ']] .. translate("已禁用") .. [[', false);
+			html += '</div><p class="wifidog-page-hint">]] .. translate("请在基本设置中启用系统") .. [[</p>';
 		}
 		el.innerHTML = html;
 	})

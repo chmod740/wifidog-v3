@@ -68,7 +68,7 @@ function loadDevices() {
 		var devices = Array.isArray(data.devices) ? data.devices : [];
 		document.getElementById('devices-count').textContent = devices.length;
 		if (!data.success || devices.length === 0) {
-			empty.style.display = 'flex';
+			empty.style.display = 'block';
 			return;
 		}
 		empty.style.display = 'none';
@@ -153,13 +153,11 @@ if (document.readyState === 'loading') {
 <div class="wifidog-shell">
 	<header class="wifidog-page-head">
 		<div class="wifidog-page-head-main">
+			<span class="wifidog-page-kicker"><%:公网隔离%></span>
 			<h2 class="wifidog-page-title"><%:黑名单管理%></h2>
 			<p class="wifidog-page-copy"><%:黑名单设备保留内网访问能力，但无法访问公网或进行自助认证。%></p>
 		</div>
-		<div class="wifidog-page-meta">
-			<span class="wifidog-badge wifidog-badge-error"><%:公网阻断%></span>
-			<button type="button" class="wifidog-btn" onclick="loadDevices()"><%:立即刷新%></button>
-		</div>
+		<div class="wifidog-page-meta"><span class="wifidog-badge wifidog-badge-error"><%:公网阻断%></span></div>
 	</header>
 	<div id="wifidog-msg" class="wifidog-msg" style="display:none;" aria-live="polite"></div>
 	<section class="wifidog-panel">
@@ -180,10 +178,7 @@ if (document.readyState === 'loading') {
 				</table>
 			</div>
 			<div id="devices-loading" class="wifidog-loading"><%:正在加载黑名单...%></div>
-			<div id="devices-empty" class="wifidog-empty" style="display:none;">
-				<strong><%:黑名单为空%></strong>
-				<span><%:被限制公网访问的设备会显示在这里。%></span>
-			</div>
+			<div id="devices-empty" class="wifidog-empty" style="display:none;"><%:黑名单中没有设备%></div>
 		</div>
 	</section>
 </div>

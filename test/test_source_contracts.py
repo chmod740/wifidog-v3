@@ -257,21 +257,8 @@ class LuCIContracts(unittest.TestCase):
             self.assertIn("wifidog-panel", view, name)
 
         styles = (APP / "luasrc/view/wifidog_v3/styles.htm").read_text()
-        for marker in (
-            "--wd-surface: rgba",
-            "prefers-color-scheme: dark",
-            "max-width: 1280px",
-            "max-width: 700px",
-            "overflow-x: auto",
-            "wifidog-state-banner",
-        ):
+        for marker in ("--wd-surface", "prefers-color-scheme: dark", "max-width: 700px", "overflow-x: auto"):
             self.assertIn(marker, styles)
-
-    def test_management_pages_do_not_render_duplicate_simpleform_titles(self) -> None:
-        for name in ("devices.lua", "whitelist.lua", "blacklist.lua", "auth_codes.lua", "backup.lua", "logs.lua"):
-            model = (APP / f"luasrc/model/cbi/wifidog_v3/{name}").read_text()
-            self.assertIn('SimpleForm("wifidog_v3")', model, name)
-            self.assertNotIn('SimpleForm("wifidog_v3",', model, name)
 
     def test_settings_page_loads_shared_styles_without_noop_request(self) -> None:
         settings = (APP / "luasrc/model/cbi/wifidog_v3/settings.lua").read_text()
