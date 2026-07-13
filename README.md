@@ -64,6 +64,13 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 - 安全卸载：卸载时清理 nftables、Portal 进程、DHCP/RA 广告、运行状态和配置文件。
 - 安全加固：授权码计数使用跨进程事务锁，包含输入校验、请求体限制、安全响应头和服务启动失败回滚。
 
+## v1.0.5 更新
+
+- 参考轻量运维面板重新整理 LuCI 管理后台，使用主题自适应表面、紧凑内容区和统一响应式布局。
+- 消除 SimpleForm 与自定义页头产生的重复标题，设备、名单和授权码页面增加明确的刷新操作与空状态说明。
+- 系统状态改为状态横幅，集中展示系统开关、防火墙规则和 Portal 服务状态。
+- 完成桌面与 390px 移动端浏览器验证，并更新全部 LuCI 页面截图。
+
 ## v1.0.4 更新
 
 - 将 `/etc/config/wifidog_v3` 正式声明为 conffile，IPK/APK 升级不再覆盖现有设置、名单、备注、授权码和 RADIUS 密钥。
@@ -111,7 +118,7 @@ WiFiDog V3 是一个面向 OpenWrt 的 LuCI 网络认证系统，用于在路由
 输出：
 
 ```text
-dist/luci-app-wifidog-v3_1.0.4-1_all.ipk
+dist/luci-app-wifidog-v3_1.0.5-1_all.ipk
 ```
 
 构建 OpenWrt 25 APK：
@@ -123,28 +130,28 @@ dist/luci-app-wifidog-v3_1.0.4-1_all.ipk
 输出：
 
 ```text
-dist/openwrt25/luci-app-wifidog-v3-1.0.4-r1.apk
+dist/openwrt25/luci-app-wifidog-v3-1.0.5-r1.apk
 ```
 
 ## 安装
 
 最新发布包：
 
-- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.4>
-- IPK：`luci-app-wifidog-v3_1.0.4-1_all.ipk`
-- APK：`luci-app-wifidog-v3-1.0.4-r1.apk`
+- Release：<https://github.com/chmod740/wifidog-v3/releases/tag/v1.0.5>
+- IPK：`luci-app-wifidog-v3_1.0.5-1_all.ipk`
+- APK：`luci-app-wifidog-v3-1.0.5-r1.apk`
 
 OpenWrt 23/24：
 
 ```sh
 opkg update
-opkg install /tmp/luci-app-wifidog-v3_1.0.4-1_all.ipk
+opkg install /tmp/luci-app-wifidog-v3_1.0.5-1_all.ipk
 ```
 
 OpenWrt 25：
 
 ```sh
-apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.4-r1.apk
+apk add --allow-untrusted /tmp/luci-app-wifidog-v3-1.0.5-r1.apk
 ```
 
 安装后进入 LuCI：
@@ -228,9 +235,9 @@ lua /tmp/utm_smoke.lua
 
 - 源码契约测试：`37 passed, 0 failed`
 - Docker OpenWrt 23.05.6：`124 passed, 0 failed`
-- Docker OpenWrt 23.05.6：v1.0.3 到 v1.0.4 IPK 原位升级，设置、密钥、名单、备注和授权码全部保留
-- UTM OpenWrt 24.10.6：v1.0.4 IPK 升级、Portal、RFC 8908/8910、设备识别、导入导出、授权码、RADIUS PAP、`Session-Timeout`、关闭和卸载清理通过
-- UTM OpenWrt 25.12.3：v1.0.4 APK 安装与升级、Portal、RFC 8908/8910、设备识别、导入导出、授权码、RADIUS PAP、`Session-Timeout`、`.apk-new` 清理和卸载清理通过
+- Docker OpenWrt 23.05.6：v1.0.4 到 v1.0.5 IPK 原位升级，设置、密钥、名单、备注和授权码全部保留
+- UTM OpenWrt 24.10.6：v1.0.5 IPK 升级、LuCI 页面、Portal、RFC 8908/8910、设备识别、导入导出、授权码、RADIUS PAP、`Session-Timeout`、关闭和卸载清理通过
+- UTM OpenWrt 25.12.3：v1.0.5 APK 安装与升级、Portal、RFC 8908/8910、设备识别、导入导出、授权码、RADIUS PAP、`Session-Timeout`、`.apk-new` 清理和卸载清理通过
 
 UTM 24/25 卸载检查确认以下项目无残留：
 
